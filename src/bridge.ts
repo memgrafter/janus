@@ -55,19 +55,26 @@ export function toPiStreamOptions(req: InternalRequest): StreamOptions {
 	const opts: StreamOptions = {};
 	if (req.temperature !== undefined) opts.temperature = req.temperature;
 	if (req.maxTokens !== undefined) opts.maxTokens = req.maxTokens;
+	// reasoningEffort lives on the API-specific options (OpenAICompletionsOptions),
+	// not on the base StreamOptions, but models.stream accepts it via the
+	// ModelsApiStreamOptions cast. pi-ai gates thinking on it being truthy.
+	if (req.reasoningEffort !== undefined) (opts as { reasoningEffort?: string }).reasoningEffort = req.reasoningEffort;
 	return opts;
 }
 
 export function assistantMessageToInternal(msg: AssistantMessage): InternalResponse {
 	let content = "";
+	let thinking = "";
 	const toolCalls: InternalToolCall[] = [];
 	for (const block of msg.content) {
 		if (block.type === "text") content += block.text;
+		else if (block.type === "thinking") thinking += block.thinking;
 		else if (block.type === "toolCall") toolCalls.push({ id: block.id, name: block.name, arguments: block.arguments });
 	}
 	return {
 		content,
 		toolCalls,
+		thinking: thinking || undefined,
 		stopReason: mapStopReason(msg.stopReason),
 		usage: {
 			input: msg.usage.input,

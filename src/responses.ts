@@ -104,6 +104,14 @@ function parseResponsesTool(t: any): InternalTool {
 
 export function responseToOpenAI(resp: InternalResponse, model: string): Record<string, unknown> {
   const output: Record<string, unknown>[] = [];
+  if (resp.thinking) {
+    output.push({
+      type: "reasoning",
+      id: `rs-${randomId()}`,
+      status: "completed",
+      summary: [{ type: "summary_text", text: resp.thinking }],
+    });
+  }
   if (resp.content) {
     output.push({
       type: "message",
@@ -144,8 +152,11 @@ export function responseToOpenAI(resp: InternalResponse, model: string): Record<
 export class ResponsesChunker {
   private readonly id = `resp-${randomId()}`;
   private readonly messageId = `msg-${randomId()}`;
+  private readonly reasoningId = `rs-${randomId()}`;
   private messageAdded = false;
+  private reasoningAdded = false;
   private textBuf = "";
+  private reasoningBuf = "";
   private readonly toolIndex = new Map<number, number>();
   private readonly toolCalls: { id: string; name: string; argsRaw: string }[] = [];
 
@@ -169,6 +180,23 @@ export class ResponsesChunker {
     return { type: "function_call", id: `fc-${tc.id}`, call_id: tc.id, name: tc.name, arguments: tc.argsRaw, status };
   }
 
+  private reasoningItem(status: string): Record<string, unknown> {
+    return {
+      type: "reasoning",
+      id: this.reasoningId,
+      status,
+      summary: [{ type: "summary_text", text: this.reasoningBuf }],
+    };
+  }
+
+  /** Current output index for a new item (reasoning, then message, then tool calls). */
+  private nextOutputIndex(): number {
+    let idx = 0;
+    if (this.reasoningAdded) idx++;
+    if (this.messageAdded) idx++;
+    return idx + this.toolCalls.length;
+  }
+
   start(): Record<string, unknown>[] {
     return [
       { type: "response.created", response: this.resp("in_progress", []) },
@@ -181,16 +209,34 @@ export class ResponsesChunker {
     const out: Record<string, unknown>[] = [];
     if (!this.messageAdded) {
       this.messageAdded = true;
-      out.push({ type: "response.output_item.added", output_index: 0, item: this.messageItem("in_progress") });
+      out.push({ type: "response.output_item.added", output_index: this.nextOutputIndex(), item: this.messageItem("in_progress") });
       out.push({
         type: "response.content_part.added",
         item_id: this.messageId,
-        output_index: 0,
+        output_index: this.nextOutputIndex(),
         content_index: 0,
         part: { type: "output_text", text: "" },
       });
     }
-    out.push({ type: "response.output_text.delta", item_id: this.messageId, output_index: 0, content_index: 0, delta });
+    out.push({ type: "response.output_text.delta", item_id: this.messageId, output_index: this.nextOutputIndex(), content_index: 0, delta });
+    return out;
+  }
+
+  thinking(delta: string): Record<string, unknown>[] {
+    this.reasoningBuf += delta;
+    const out: Record<string, unknown>[] = [];
+    if (!this.reasoningAdded) {
+      this.reasoningAdded = true;
+      out.push({ type: "response.output_item.added", output_index: this.nextOutputIndex(), item: this.reasoningItem("in_progress") });
+      out.push({
+        type: "response.reasoning_summary_part.added",
+        item_id: this.reasoningId,
+        output_index: this.nextOutputIndex(),
+        summary_index: 0,
+        part: { type: "summary_text", text: "" },
+      });
+    }
+    out.push({ type: "response.reasoning_summary_text.delta", item_id: this.reasoningId, output_index: this.nextOutputIndex(), summary_index: 0, delta });
     return out;
   }
 
@@ -198,7 +244,7 @@ export class ResponsesChunker {
     const idx = this.toolCalls.length;
     this.toolIndex.set(piContentIndex, idx);
     this.toolCalls.push({ id, name, argsRaw: "" });
-    const outputIndex = (this.messageAdded ? 1 : 0) + idx;
+    const outputIndex = this.nextOutputIndex();
     return [{ type: "response.output_item.added", output_index: outputIndex, item: this.functionCallItem(this.toolCalls[idx], "in_progress") }];
   }
 
@@ -213,18 +259,25 @@ export class ResponsesChunker {
     const out: Record<string, unknown>[] = [];
     const output: Record<string, unknown>[] = [];
     let outputIndex = 0;
+    if (this.reasoningAdded) {
+      out.push({ type: "response.reasoning_summary_text.done", item_id: this.reasoningId, output_index: outputIndex, summary_index: 0, text: this.reasoningBuf });
+      out.push({ type: "response.reasoning_summary_part.done", item_id: this.reasoningId, output_index: outputIndex, summary_index: 0, part: { type: "summary_text", text: this.reasoningBuf } });
+      out.push({ type: "response.output_item.done", output_index: outputIndex, item: this.reasoningItem("completed") });
+      output.push(this.reasoningItem("completed"));
+      outputIndex++;
+    }
     if (this.messageAdded) {
-      out.push({ type: "response.output_text.done", item_id: this.messageId, output_index: 0, content_index: 0, text: this.textBuf });
+      out.push({ type: "response.output_text.done", item_id: this.messageId, output_index: outputIndex, content_index: 0, text: this.textBuf });
       out.push({
         type: "response.content_part.done",
         item_id: this.messageId,
-        output_index: 0,
+        output_index: outputIndex,
         content_index: 0,
         part: { type: "output_text", text: this.textBuf },
       });
-      out.push({ type: "response.output_item.done", output_index: 0, item: this.messageItem("completed") });
+      out.push({ type: "response.output_item.done", output_index: outputIndex, item: this.messageItem("completed") });
       output.push(this.messageItem("completed"));
-      outputIndex = 1;
+      outputIndex++;
     }
     for (const tc of this.toolCalls) {
       out.push({ type: "response.output_item.done", output_index: outputIndex, item: this.functionCallItem(tc, "completed") });
