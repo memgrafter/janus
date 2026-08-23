@@ -43,6 +43,12 @@ export async function createServer(
 	const server = Bun.serve({
 		hostname: config.host,
 		port: listenPort,
+		// Bun.serve's server-side idle timeout defaults to 12s: if no bytes are
+		// written to the client for 12s, the response is aborted. A large-context
+		// prefill on a shared vllm can be silent for well over 12s (vllm sends
+		// nothing until the first token), so raise it to the max (255s). The
+		// keep-alive pings in handleChat/handleResponses cover the >255s tail.
+		idleTimeout: 255,
 		async fetch(req) {
 			try {
 				const url = new URL(req.url);
@@ -114,6 +120,34 @@ function projectFromRequest(req: Request, body: unknown): string | undefined {
 /** Convert the (seconds) config timeout to ms; 0 = disabled (very large backstop). */
 function timeoutMsFromConfig(config: Config): number {
 	return config.requestTimeoutS > 0 ? config.requestTimeoutS * 1000 : 2_147_483_647;
+}
+
+/**
+ * Keep the downstream SSE connection warm during a long upstream prefill.
+ * Bun.serve's server-side idleTimeout (capped at 255s) aborts a response that
+ * writes no bytes for that long, and a large-context prefill on a shared vllm
+ * can be silent well past that (vllm sends nothing until the first token).
+ * While running, an SSE comment (ignored by spec-compliant clients) is
+ * enqueued every `intervalMs` so the idle timer never trips. Call stop() once
+ * the first real chunk is pushed or the stream ends.
+ */
+function makeKeepAlive(
+	controller: ReadableStreamDefaultController<Uint8Array>,
+	encoder: TextEncoder,
+	intervalMs = 10_000,
+) {
+	let timer: ReturnType<typeof setInterval> | undefined;
+	return {
+		start() {
+			if (timer) return;
+			timer = setInterval(() => {
+				try { controller.enqueue(encoder.encode(": keep-alive\n\n")); } catch { /* client gone */ }
+			}, intervalMs);
+		},
+		stop() {
+			if (timer) { clearInterval(timer); timer = undefined; }
+		},
+	};
 }
 
 async function handleModels(client: Client): Promise<Response> {
@@ -210,17 +244,20 @@ async function handleChat(req: Request, client: Client, control: Control, config
 			const push = (chunk: Record<string, unknown>) => {
 				try { controller.enqueue(encoder.encode(sseData(chunk))); } catch { /* client gone */ }
 			};
+			const keepAlive = makeKeepAlive(controller, encoder);
 			push(chunker.start());
+			keepAlive.start();
 			try {
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
 					const out = mapEventToChunk(chunker, event);
-					if (out) push(out);
+					if (out) { push(out); keepAlive.stop(); }
 				}
 			} catch (e) {
 				push({ error: { message: e instanceof Error ? e.message : String(e) } });
 			} finally {
+				keepAlive.stop();
 				try { controller.enqueue(encoder.encode(sseDone())); controller.close(); } catch { /* client gone */ }
 			}
 		},
@@ -259,16 +296,21 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 			const push = (chunk: Record<string, unknown>) => {
 				try { controller.enqueue(encoder.encode(sseData(chunk))); } catch { /* client gone */ }
 			};
+			const keepAlive = makeKeepAlive(controller, encoder);
 			for (const e of chunker.start()) push(e);
+			keepAlive.start();
+			let pushed = false;
 			try {
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
-					for (const e of mapResponsesEvent(chunker, event)) push(e);
+					for (const e of mapResponsesEvent(chunker, event)) { push(e); pushed = true; }
+					if (pushed) keepAlive.stop();
 				}
 			} catch (e) {
 				push({ type: "response.failed", response: { status: "failed", error: { message: e instanceof Error ? e.message : String(e) } } });
 			} finally {
+				keepAlive.stop();
 				try { controller.close(); } catch { /* client gone */ }
 			}
 		},
