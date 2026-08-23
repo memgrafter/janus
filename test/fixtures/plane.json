@@ -1,0 +1,5 @@
+{
+  "buckets": [{ "id": "b1", "limitTokens": 1000000, "deadlineMs": 30000 }],
+  "categories": [{ "id": "fast", "models": ["faux/faux"], "quotaBucketId": "b1", "deadlineMs": 30000 }],
+  "projects": [{ "id": "demo", "category": "fast", "quotaBucketId": "b1", "deadlineMs": 30000 }]
+}
