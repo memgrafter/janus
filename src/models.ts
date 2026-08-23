@@ -3,8 +3,9 @@
  * ids to concrete pi-ai Models.
  */
 
-import { createModels, fauxAssistantMessage, fauxProvider, type Api, type Model, type Models } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, type Api, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { registerModelsJson } from "./custom-providers.ts";
 import type { Config } from "./config.ts";
 
 export interface Client {
@@ -14,11 +15,15 @@ export interface Client {
 }
 
 export async function createClient(config: Config): Promise<Client> {
-	const models = config.faux ? fauxModels(config) : builtinModels();
+	const models: MutableModels = config.faux ? fauxModels(config) : builtinModels();
+	if (config.modelsJsonPath) {
+		const registered = registerModelsJson(models, config.modelsJsonPath);
+		if (registered.length > 0) console.log(`pi-janus: registered custom providers: ${registered.join(", ")}`);
+	}
 	return { models, resolveModel: (id) => resolveModel(models, id) };
 }
 
-function fauxModels(config: Config): Models {
+function fauxModels(config: Config): MutableModels {
 	const faux = fauxProvider({
 		models: [{ id: "faux", name: "Faux Model", contextWindow: 8192, maxTokens: 2048 }],
 	});

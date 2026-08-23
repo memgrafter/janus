@@ -1,0 +1,20 @@
+{
+  "providers": {
+    "testprov": {
+      "baseUrl": "http://localhost:9999/v1",
+      "api": "openai-completions",
+      "apiKey": "test-key",
+      "models": [
+        {
+          "id": "test-model",
+          "name": "Test Model",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 8192,
+          "maxTokens": 1024,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}
