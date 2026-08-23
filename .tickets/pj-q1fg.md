@@ -27,6 +27,10 @@ Add the OpenAI Responses API (POST /v1/responses) as a followup to the chat-comp
 ## Design dependency
 - Requires the core (pj-vwed) to keep the OpenAI wire-format mapping, the pi-ai Context/StreamOptions mapping, and the SSE transport as separate layers, so this ticket adds a new wire-format layer without touching the others.
 
+## Minimal implementation (selected)
+
+A **protocol surface**, not a control-plane component. New wire-format layer `src/responses.ts` parallel to `openai.ts`, reusing `bridge.ts` (pi-ai mapping) + `sse.ts` (transport) + the control layer. Map the Responses request → the same `InternalRequest` → existing pipeline; emit `response.*` SSE events. Orthogonal to the ledger/queue/events components; build independently whenever.
+
 ## Depends on
 - Core proxy (pj-vwed).
 
@@ -35,3 +39,9 @@ Add the OpenAI Responses API (POST /v1/responses) as a followup to the chat-comp
 - A streaming /v1/responses request emits valid response.* SSE events ending in response.completed.
 - A function/tool call round-trips (response emits a function_call output item; a follow-up carrying the function_call_output continues).
 - No changes required to the core's pi-ai mapping or transport layers.
+
+## Notes
+
+**2026-08-23T16:03:03Z**
+
+Implemented: src/responses.ts (parseResponsesRequest/responseToOpenAI/ResponsesChunker) + POST /v1/responses (stream + non-stream). Unit (responses.test.ts) + integration + live. No changes to bridge.ts/sse.ts.

@@ -22,6 +22,14 @@ Take a priority queue (or set) of available work for streams of inference that a
 - Backpressure/shedding: when no capacity (quota/deadline) is available, keep items queued up to their expiry or shed them.
 - Telemetry: emit spans/attributes for enqueue, allocate, expire, shed, and complete.
 
+## Minimal implementation (selected)
+
+- **`WorkItem = { id, priority, project, category, quotaBucket, deadline, expiresAt, pollAfterMs?, deferredHandle? | request, enqueuedAt, status }`.**
+- **Heap** keyed by `(priority, enqueuedAt)` — highest priority first, FIFO within a band. Small hand-rolled heap (Bun has none); sort-on-pop is fine at minimal scale.
+- **Allocator:** a timer-driven loop (event-loop, cooperative — no worker threads) that pops the highest-priority non-expired item passing `ledger.check`, then drives it: `fetchDeferred(model, handle)` if it has a handle, else `stream(model, …)` for a plain queued request.
+- **Expiry sweeper:** drops items past `expiresAt`, calls `cancelDeferred` when there's a handle, emits an `expire` event.
+- **Constraint:** pi-ai's `DeferredHandle` is only implemented by the faux provider (no real upstream yet). The queue must be useful *without* real deferred — it queues **plain requests** with a client-side `expiresAt`; the deferred-handle path is exercised via faux. Real-provider deferred is a pi-ai gap to watch.
+
 ## Depends on
 - Core proxy (needs the pi-ai client + request path).
 - Quota & deadline ledger (allocation must respect quotas/deadlines).
@@ -30,3 +38,9 @@ Take a priority queue (or set) of available work for streams of inference that a
 - Enqueued work is allocated in priority order.
 - A work item past its expiresAt is cancelled/dropped and reported.
 - Allocation never dispatches work that would exceed the target quota/deadline.
+
+## Notes
+
+**2026-08-23T16:03:03Z**
+
+Implemented: PriorityQueue (binary max-heap) + runAllocator (expire/hold/drive) + server timer. Unit (queue.test.ts) + integration + live. Real-provider deferred (cancelDeferred) not exercisable (faux-only).

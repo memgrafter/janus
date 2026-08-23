@@ -54,6 +54,18 @@ A local HTTP server that:
 - Uses DeferredHandle as the expiring work item it allocates from a priority queue it owns.
 - Routes requests to the correct project via sessionId/metadata/headers.
 
+## Control layer (shared spine)
+
+All control-plane components (ledger, categories, queue, events) plug into one new module — `src/control.ts` — that `server.ts` consults *between* "parse request" and "dispatch to pi-ai". It owns the ledger, the category registry, and the queue, and is the only place that decides **admit / queue / reject** and which quota+deadline applies. The core's three layers (wire-format → pi-ai mapping → transport) stay untouched; the control layer sits *above* them.
+
+Every request gets a **DispatchContext** that threads through:
+`{ project, category, model, quotaBucket, deadline, priority, source }`
+
+- **Config:** a JSON file (`PI_JANUS_CONFIG` path), not env — categories/buckets/projects are too nested for env vars. When no config is loaded, the plane is **inert** (everything admitted, no quotas), so the core keeps working unchanged.
+- **Telemetry:** port-first — a thin local `Telemetry` interface (default = in-memory ring buffer, exposed via a debug endpoint); `@earendil-works/pi-telemetry` is a pluggable adapter added later. *DECISION (pending):* confirm port-first vs. pi-telemetry as a hard dep from the start.
+- **Deferred:** pi-ai's `DeferredHandle` is only implemented by the faux provider (no real upstream yet) — the queue must be useful without real deferred (plain queued requests + client-side `expiresAt`); the deferred-handle path is exercised via faux.
+- **Build order:** `pj-xe41` (ledger) → `pj-1uyc` (categories) ∥ `pj-1s1x` (queue) → `pj-gz47` (events/routing). `pj-q1fg` (Responses API) is a protocol surface, orthogonal to the control plane.
+
 ## Ticket breakdown (children of this epic)
 
 - Core buildout: minimal productionized local proxy using pi-ai as the client, exposing an OpenAI-compatible chat-completions API. No scope beyond the minimal proxy.

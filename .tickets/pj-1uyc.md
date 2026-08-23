@@ -22,6 +22,13 @@ Configure which "intelligence types / categories" are available, and bind them t
 - Expose the available categories (and which are currently available given auth/quota) to clients — e.g., a /v1/categories or /v1/models endpoint that reflects the registry + availability.
 - Resolve an incoming request's requested category/model to the concrete pi-ai Model + quota bucket + deadline used for dispatch.
 
+## Minimal implementation (selected)
+
+- **Config-driven** `categoryId → Category` (from the `PI_JANUS_CONFIG` JSON). `Category = { id, name, models: ["prov/id", …], capabilities, quotaBucketId, deadlinePolicy }`.
+- **`resolveCategory(id)`** is the routing decision: a request's `model` may be a *category id* or a raw `prov/id`. Category → pick a concrete model (minimal: first `getAvailable()` match) + its `quotaBucket` + `deadlinePolicy`. This turns a request into a full DispatchContext.
+- **New endpoint** `GET /v1/categories` (list + which are available now given auth/quota). Leave `/v1/models` as raw pi-ai models for now.
+- **Proxy-owned categories** (via `createProvider`): support the *shape* (a category whose `models` point at a custom provider), but defer actually registering custom providers — first cut binds categories to real pi-ai models only.
+
 ## Depends on
 - Core proxy (needs the Models collection + request path).
 - Quota & deadline ledger (binding target).
@@ -30,3 +37,9 @@ Configure which "intelligence types / categories" are available, and bind them t
 - A client can list available intelligence categories and see which are available now.
 - A request naming a category resolves to the correct underlying model and is dispatched under that category's quota/deadline.
 - A proxy-owned category (registered via createProvider) is selectable and routable.
+
+## Notes
+
+**2026-08-23T16:03:03Z**
+
+Implemented: CategoryRegistry (resolve/list/availability) + GET /v1/categories. Unit (categories.test.ts) + integration + live. Proxy-owned categories via setProvider (faux); createProvider custom providers deferred.

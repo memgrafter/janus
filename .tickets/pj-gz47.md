@@ -22,6 +22,13 @@ Accept requests from priority synchronous workers (mainly user-driven synchronou
 - Priority: synchronous worker requests are prioritized over event/background work in allocation.
 - Telemetry: emit spans/attributes for intake source (sync-worker vs event), project, and priority.
 
+## Minimal implementation (selected)
+
+- **Sync workers:** no new transport — coding agents already hit `/v1/chat/completions` via `OPENAI_BASE_URL`. Minimal = tag those as `source: "sync-worker"` + a **higher priority band** so the allocator pre-empts background work.
+- **Event intake:** new `POST /v1/events` → `{ project, category, input, priority?, deadline? }` → enqueue a `WorkItem`, return `202` + work id; `GET /v1/work/:id` to poll status/result. (Push/webhook delivery deferred.)
+- **Project routing:** `X-Project` header (or `metadata.project`) → project config `{ category, quotaBucket, deadline }`. This is where `sessionId`/`metadata`/`headers` (already in pi-ai's `StreamOptions`) carry the routing.
+- **Priority bands:** `sync-worker > event/background`, enforced by the allocator's ordering.
+
 ## Depends on
 - Core proxy (needs the request path + endpoints).
 - Priority queue & expiring-work allocation (event work feeds the queue; sync work pre-empts it).
@@ -31,3 +38,9 @@ Accept requests from priority synchronous workers (mainly user-driven synchronou
 - An event-based request enqueues work for the correct project.
 - A synchronous worker request is allocated ahead of queued background work.
 - Requests are routed to the correct project's category/quota/deadline.
+
+## Notes
+
+**2026-08-23T16:03:03Z**
+
+Implemented: POST /v1/events + GET /v1/work/:id + X-Project routing + sync/event priority bands. Unit (control.test.ts) + integration + live.

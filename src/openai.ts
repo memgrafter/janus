@@ -94,7 +94,7 @@ export function parseChatRequest(body: unknown): InternalRequest {
 	};
 }
 
-function parseMessage(m: any): InternalMessage {
+export function parseMessage(m: any): InternalMessage {
 	const content = typeof m.content === "string" ? m.content : m.content ? textFromContent(m.content) : "";
 	switch (m.role) {
 		case "system":
