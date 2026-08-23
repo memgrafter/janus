@@ -13,6 +13,11 @@ describe("parseChatRequest", () => {
 		expect(() => parseChatRequest({ messages: [] })).toThrow(OpenAIError);
 	});
 
+	it("treats a developer-role message as system", () => {
+		const r = parseChatRequest({ model: "m", messages: [{ role: "developer", content: "be terse" }, { role: "user", content: "hi" }] });
+		expect(r.messages).toEqual([{ role: "system", content: "be terse" }, { role: "user", content: "hi" }]);
+	});
+
 	it("parses tools, temperature, and max_tokens", () => {
 		const r = parseChatRequest({
 			model: "m",
