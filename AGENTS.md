@@ -89,7 +89,7 @@ Model id / category resolution: a request's `model` may be a **category id** or 
 | `PI_JANUS_HOST` | `127.0.0.1` | bind host |
 | `PI_JANUS_PORT` | `8787` | bind port |
 | `PI_JANUS_TOKEN` | _(unset)_ | when set, require `Authorization: Bearer <token>` |
-| `PI_JANUS_TIMEOUT_MS` | `120000` | per-request provider timeout |
+| `PI_JANUS_TIMEOUT_S` | `600` | per-request provider timeout in seconds (0 = disabled); clamped 0-99999 |
 | `PI_JANUS_FAUX` | _(unset)_ | `1`/`true` to use the scripted faux provider (tests/demos) |
 | `PI_JANUS_FAUX_RESPONSE` | `pi-janus faux ok` | faux response text |
 | `PI_JANUS_CONFIG` | _(unset)_ | path to a JSON control-plane config (buckets/categories/projects); unset = inert plane |
