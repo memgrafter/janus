@@ -98,6 +98,7 @@ export function parseMessage(m: any): InternalMessage {
 	const content = typeof m.content === "string" ? m.content : m.content ? textFromContent(m.content) : "";
 	switch (m.role) {
 		case "system":
+		case "developer": // OpenAI's successor to "system"; treat as the instruction/system prompt
 			return { role: "system", content };
 		case "user":
 			return { role: "user", content };
