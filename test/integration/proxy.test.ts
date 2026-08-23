@@ -69,6 +69,30 @@ describe("integration (in-process, faux provider)", () => {
 		expect(res.status).toBeGreaterThanOrEqual(400);
 	});
 
+	it("aborts a streaming request without crashing the server", async () => {
+		const ac = new AbortController();
+		setTimeout(() => ac.abort(), 25);
+		try {
+			await fetch(`${base}/chat/completions`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ model: "faux/faux", messages: [{ role: "user", content: "hi" }], stream: true }),
+				signal: ac.signal,
+			});
+		} catch {
+			// expected: the request is aborted
+		}
+		// the server must still be healthy and able to serve a fresh request after the abort
+		const res = await fetch(`${root}/health`);
+		expect(res.status).toBe(200);
+		const again = await fetch(`${base}/chat/completions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ model: "faux/faux", messages: [{ role: "user", content: "hi" }] }),
+		});
+		expect(again.status).toBe(200);
+	});
+
 	it("404 on unknown route", async () => {
 		const res = await fetch(`${root}/v1/nope`);
 		expect(res.status).toBe(404);

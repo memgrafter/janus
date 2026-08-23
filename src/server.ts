@@ -184,6 +184,10 @@ async function handleChat(req: Request, client: Client, control: Control, config
 	const options = toPiStreamOptions(internal);
 	options.timeoutMs = ctx.deadlineMs ?? config.requestTimeoutMs;
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
+	// Propagate the client's abort/disconnect to the upstream pi-ai stream so a
+	// client timeout frees the provider instead of holding the request for the full
+	// (long) pi-janus timeout. pi owns the timeout; pi-janus just follows it.
+	options.signal = req.signal;
 	if (ctx.project) options.metadata = { project: ctx.project };
 
 	if (!internal.stream) {
@@ -196,19 +200,23 @@ async function handleChat(req: Request, client: Client, control: Control, config
 	const stream = new ReadableStream<Uint8Array>({
 		async start(controller) {
 			const chunker = new StreamChunker(ctx.model.id);
-			controller.enqueue(encoder.encode(sseData(chunker.start())));
+			// Once the client disconnects the stream is cancelled and enqueue throws;
+			// swallow it (the upstream is already cancelled via options.signal).
+			const push = (chunk: Record<string, unknown>) => {
+				try { controller.enqueue(encoder.encode(sseData(chunk))); } catch { /* client gone */ }
+			};
+			push(chunker.start());
 			try {
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
 					const out = mapEventToChunk(chunker, event);
-					if (out) controller.enqueue(encoder.encode(sseData(out)));
+					if (out) push(out);
 				}
 			} catch (e) {
-				controller.enqueue(encoder.encode(sseData({ error: { message: e instanceof Error ? e.message : String(e) } })));
+				push({ error: { message: e instanceof Error ? e.message : String(e) } });
 			} finally {
-				controller.enqueue(encoder.encode(sseDone()));
-				controller.close();
+				try { controller.enqueue(encoder.encode(sseDone())); controller.close(); } catch { /* client gone */ }
 			}
 		},
 	});
@@ -230,6 +238,8 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 	const options = toPiStreamOptions(internal);
 	options.timeoutMs = ctx.deadlineMs ?? config.requestTimeoutMs;
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
+	// Propagate the client's abort/disconnect to the upstream pi-ai stream.
+	options.signal = req.signal;
 
 	if (!internal.stream) {
 		const msg = await client.models.complete(ctx.model, context, options);
@@ -241,19 +251,20 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 	const stream = new ReadableStream<Uint8Array>({
 		async start(controller) {
 			const chunker = new ResponsesChunker(ctx.model.id);
-			for (const e of chunker.start()) controller.enqueue(encoder.encode(sseData(e)));
+			const push = (chunk: Record<string, unknown>) => {
+				try { controller.enqueue(encoder.encode(sseData(chunk))); } catch { /* client gone */ }
+			};
+			for (const e of chunker.start()) push(e);
 			try {
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
-					for (const e of mapResponsesEvent(chunker, event)) controller.enqueue(encoder.encode(sseData(e)));
+					for (const e of mapResponsesEvent(chunker, event)) push(e);
 				}
 			} catch (e) {
-				controller.enqueue(
-					encoder.encode(sseData({ type: "response.failed", response: { status: "failed", error: { message: e instanceof Error ? e.message : String(e) } } })),
-				);
+				push({ type: "response.failed", response: { status: "failed", error: { message: e instanceof Error ? e.message : String(e) } } });
 			} finally {
-				controller.close();
+				try { controller.close(); } catch { /* client gone */ }
 			}
 		},
 	});
