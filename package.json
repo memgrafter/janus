@@ -1,0 +1,26 @@
+{
+	"name": "pi-janus",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Local OpenAI-compatible inference proxy built on pi-ai",
+	"bin": {
+		"pi-janus": "./dist/pi-janus"
+	},
+	"scripts": {
+		"build": "./scripts/build.sh",
+		"test": "./scripts/test.sh",
+		"release": "./scripts/release.sh",
+		"start": "bun run src/index.ts"
+	},
+	"dependencies": {
+		"@earendil-works/pi-ai": "0.84.2"
+	},
+	"engines": {
+		"bun": ">=1.3.14"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.4.0",
+		"typescript": "^7.0.2"
+	}
+}
