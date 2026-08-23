@@ -1,7 +1,7 @@
 ---
 id: pj-xe41
-status: open
-open: true
+status: closed
+open: false
 deps: [pj-vwed]
 links: []
 created: 2026-08-23T12:59:08Z

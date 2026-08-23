@@ -1,7 +1,7 @@
 ---
 id: pj-gz47
-status: open
-open: true
+status: closed
+open: false
 deps: [pj-vwed, pj-1s1x]
 links: []
 created: 2026-08-23T12:59:09Z

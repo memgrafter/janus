@@ -1,7 +1,7 @@
 ---
 id: pj-vwed
-status: open
-open: true
+status: closed
+open: false
 deps: []
 links: []
 created: 2026-08-23T12:59:03Z

@@ -1,7 +1,7 @@
 ---
 id: pj-q1fg
-status: open
-open: true
+status: closed
+open: false
 deps: [pj-vwed]
 links: []
 created: 2026-08-23T13:44:51Z
