@@ -14,6 +14,8 @@ export interface Config {
   fauxResponse: string;
   /** Path to a JSON control-plane config (buckets / categories / projects). */
   planeConfigPath?: string;
+  /** Path to a pi models.json file with custom providers to register. */
+  modelsJsonPath?: string;
   /** Allocator tick interval in milliseconds. */
   allocMs: number;
 }
@@ -27,6 +29,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     faux: env["PI_JANUS_FAUX"] === "1" || env["PI_JANUS_FAUX"] === "true",
     fauxResponse: env["PI_JANUS_FAUX_RESPONSE"] ?? "pi-janus faux ok",
     planeConfigPath: env["PI_JANUS_CONFIG"] || undefined,
+    modelsJsonPath: env["PI_JANUS_MODELS_JSON"] || undefined,
     allocMs: intEnv(env["PI_JANUS_ALLOC_MS"], 1000),
   };
 }

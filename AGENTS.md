@@ -47,7 +47,8 @@ src/
   index.ts       entrypoint: loadConfig + createServer + SIGINT/SIGTERM shutdown; import.meta.main guard
   server.ts      Bun.serve: routes, bearer auth, request pipeline, allocator timer
   config.ts      loadConfig(env); parsePlaneConfig/loadPlaneConfig (JSON control-plane config)
-  models.ts      createClient(config) -> {models, resolveModel}; builtinModels() or faux
+  models.ts      createClient(config) -> {models, resolveModel}; builtinModels() or faux; registers custom providers
+  custom-providers.ts  registerModelsJson(models, path): load a pi models.json catalog -> createProvider + getApiProvider per provider; resolveApiKey ("$ENV" or literal); skip bad providers non-fatally
   control.ts     Control: composes ledger + categories + queue; admit()/enqueueEvent()/tick(); PRIORITY bands
   ledger.ts      Ledger: per-bucket token/cost/rate-limit tracking; check/record/observeRateLimit/deadlineMs
   categories.ts  CategoryRegistry: category -> models + quotaBucket + deadline; resolve()
@@ -93,8 +94,9 @@ Model id / category resolution: a request's `model` may be a **category id** or 
 | `PI_JANUS_FAUX_RESPONSE` | `pi-janus faux ok` | faux response text |
 | `PI_JANUS_CONFIG` | _(unset)_ | path to a JSON control-plane config (buckets/categories/projects); unset = inert plane |
 | `PI_JANUS_ALLOC_MS` | `1000` | allocator tick interval (ms) for queued event work |
+| `PI_JANUS_MODELS_JSON` | _(unset)_ | path to a pi `models.json` provider catalog (e.g. `~/.pi/agent/models.json`); registers those providers alongside the builtins |
 
-Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the environment by pi-ai's built-in providers — pi-janus does not manage them.
+Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the environment by pi-ai's built-in providers — pi-janus does not manage them. When `PI_JANUS_MODELS_JSON` is set, `custom-providers.ts` also registers the providers in that catalog (each with its own `baseUrl`/`apiKey`/`api`); a provider's `apiKey` may be a literal (e.g. `"0"`) or an env ref (`"$OPENROUTER_API_KEY"`). Providers with no models, no `api`, or an unknown `api` are skipped with a warning (non-fatal). Request a catalog model as `provider/id` (e.g. `vert-qwen38-dual-fast/qwen3.8-27b`).
 
 ## pi-ai API surface used
 
@@ -102,6 +104,7 @@ Pinned to `@earendil-works/pi-ai@0.84.2` (exact). Verified against `~/clones/pi-
 
 - **Main entry** `@earendil-works/pi-ai`: `createModels`, `createProvider`, `fauxProvider`, `fauxAssistantMessage`; types `Model`, `Context`, `StreamOptions`, `AssistantMessage`, `AssistantMessageEvent`, `Usage`, `Tool`, `TSchema`, `Api`.
 - **Subpath** `@earendil-works/pi-ai/providers/all`: `builtinModels()` (registers all built-in providers; reads provider keys from env).
+- **Subpath** `@earendil-works/pi-ai/compat`: `getApiProvider(api)` -> `{ api, stream, streamSimple }` (the per-API stream impls). Importing this subpath runs `registerBuiltInApiProviders()` at module load, populating the registry with `openai-completions` etc. — this is why `custom-providers.ts` imports from `/compat`.
 - `Models` methods: `getModels()`, `getModel(provider,id)`, `getAvailable()`, `stream(model,context,options)`, `complete(model,context,options)`, `setProvider()`.
 
 ## Gotchas (will bite you)
