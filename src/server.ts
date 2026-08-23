@@ -322,6 +322,8 @@ function mapEventToChunk(chunker: StreamChunker, event: AssistantMessageEvent): 
 	switch (event.type) {
 		case "text_delta":
 			return chunker.text(event.delta);
+		case "thinking_delta":
+			return chunker.thinking(event.delta);
 		case "toolcall_start": {
 			const tc = event.partial.content[event.contentIndex] as ToolCall | undefined;
 			return chunker.toolCallStart(event.contentIndex, tc?.id ?? "", tc?.name ?? "");
@@ -341,6 +343,8 @@ function mapResponsesEvent(chunker: ResponsesChunker, event: AssistantMessageEve
 	switch (event.type) {
 		case "text_delta":
 			return chunker.text(event.delta);
+		case "thinking_delta":
+			return chunker.thinking(event.delta);
 		case "toolcall_start": {
 			const tc = event.partial.content[event.contentIndex] as ToolCall | undefined;
 			return chunker.toolCallStart(event.contentIndex, tc?.id ?? "", tc?.name ?? "");

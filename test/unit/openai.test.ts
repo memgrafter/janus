@@ -75,6 +75,30 @@ describe("completionToOpenAI", () => {
 		expect(out.choices[0].message.tool_calls[0].function.arguments).toBe('{"a":1}');
 		expect(out.choices[0].finish_reason).toBe("tool_calls");
 	});
+
+	it("carries thinking as reasoning_content on the message", () => {
+		const out = completionToOpenAI({
+			content: "42",
+			toolCalls: [],
+			thinking: "let me think...",
+			stopReason: "stop",
+			usage: { input: 1, output: 1, totalTokens: 2 },
+			model: "m",
+		}) as any;
+		expect(out.choices[0].message.reasoning_content).toBe("let me think...");
+		expect(out.choices[0].message.content).toBe("42");
+	});
+
+	it("omits reasoning_content when there is no thinking", () => {
+		const out = completionToOpenAI({
+			content: "hi",
+			toolCalls: [],
+			stopReason: "stop",
+			usage: { input: 1, output: 1, totalTokens: 2 },
+			model: "m",
+		}) as any;
+		expect(out.choices[0].message.reasoning_content).toBeUndefined();
+	});
 });
 
 describe("modelListToOpenAI", () => {
@@ -93,6 +117,13 @@ describe("StreamChunker", () => {
 		const done = c.done("stop", { input: 1, output: 1, totalTokens: 2 }) as any;
 		expect(done.choices[0].finish_reason).toBe("stop");
 		expect(done.usage.total_tokens).toBe(2);
+	});
+
+	it("emits thinking deltas in the reasoning_content field", () => {
+		const c = new StreamChunker("m");
+		const t = c.thinking("hmm ") as any;
+		expect(t.choices[0].delta.reasoning_content).toBe("hmm ");
+		expect(t.choices[0].delta.content).toBeUndefined();
 	});
 
 	it("assigns sequential tool_call indices", () => {

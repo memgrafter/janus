@@ -98,4 +98,24 @@ describe("ResponsesChunker", () => {
 		expect(completed.response.output[0].name).toBe("add");
 		expect(completed.response.output[0].arguments).toBe('{"a":1}');
 	});
+
+	it("emits a reasoning item before the message for thinking", () => {
+		const c = new ResponsesChunker("m");
+		const types: any[] = [];
+		let completed: any;
+		for (const e of c.start()) types.push(e.type);
+		for (const e of c.thinking("hmm ")) types.push(e.type);
+		for (const e of c.thinking("42")) types.push(e.type);
+		for (const e of c.text("the answer")) types.push(e.type);
+		for (const e of c.done({ input: 1, output: 2, totalTokens: 3 })) {
+			types.push(e.type);
+			if (e.type === "response.completed") completed = e;
+		}
+		expect(types).toContain("response.reasoning_summary_text.delta");
+		// reasoning item first, then message
+		expect(completed.response.output[0].type).toBe("reasoning");
+		expect(completed.response.output[0].summary[0].text).toBe("hmm 42");
+		expect(completed.response.output[1].type).toBe("message");
+		expect(completed.response.output[1].content[0].text).toBe("the answer");
+	});
 });

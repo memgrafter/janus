@@ -34,6 +34,13 @@ export interface InternalRequest {
 	tools?: InternalTool[];
 	temperature?: number;
 	maxTokens?: number;
+	/**
+	 * Reasoning effort requested by the client (e.g. "low"|"medium"|"high").
+	 * Set from `reasoning_effort` or `chat_template_kwargs.enable_thinking`.
+	 * Forwarded to pi-ai as options.reasoningEffort, which gates thinking on
+	 * for providers that key off it (e.g. qwen-chat-template enable_thinking).
+	 */
+	reasoningEffort?: string;
 	stream: boolean;
 }
 
@@ -49,6 +56,8 @@ export interface InternalUsage {
 export interface InternalResponse {
 	content: string;
 	toolCalls: InternalToolCall[];
+	/** Reasoning/thinking text, when the model produced it. */
+	thinking?: string;
 	stopReason: StopReason;
 	usage: InternalUsage;
 	model: string;
@@ -90,8 +99,24 @@ export function parseChatRequest(body: unknown): InternalRequest {
 				: typeof b.max_completion_tokens === "number"
 					? b.max_completion_tokens
 					: undefined,
+		reasoningEffort: parseReasoningEffort(b),
 		stream: b.stream === true,
 	};
+}
+
+/**
+ * Derive a reasoning-effort hint from the OpenAI request body. pi-ai gates
+ * thinking on `options.reasoningEffort` being truthy (e.g. qwen-chat-template
+ * sets `enable_thinking: !!reasoningEffort`), so we must surface the client's
+ * intent. Accepts the OpenAI-standard `reasoning_effort` string, or vllm's
+ * `chat_template_kwargs.enable_thinking` boolean (mapped to "medium").
+ */
+function parseReasoningEffort(b: Record<string, any> | null): string | undefined {
+	if (typeof b?.reasoning_effort === "string" && b.reasoning_effort) return b.reasoning_effort;
+	const enable = b?.chat_template_kwargs?.enable_thinking;
+	if (enable === true) return "medium";
+	if (enable === false) return undefined;
+	return undefined;
 }
 
 export function parseMessage(m: any): InternalMessage {
@@ -160,6 +185,7 @@ export function modelListToOpenAI(entries: { id: string; provider: string }[]): 
 
 export function completionToOpenAI(resp: InternalResponse): Record<string, unknown> {
 	const message: Record<string, unknown> = { role: "assistant", content: resp.content || null };
+	if (resp.thinking) message.reasoning_content = resp.thinking;
 	if (resp.toolCalls.length > 0) {
 		message.tool_calls = resp.toolCalls.map((tc) => ({
 			id: tc.id,
@@ -233,6 +259,17 @@ export class StreamChunker {
 
 	text(delta: string): Record<string, unknown> {
 		return this.choice({ content: delta });
+	}
+
+	/**
+	 * Reasoning/thinking delta. Emitted in the `reasoning_content` field — the
+	 * canonical OpenAI-compatible reasoning field that pi-ai's client reads first
+	 * (OPENAI_COMPLETIONS_REASONING_FIELDS = [reasoning_content, reasoning, ...]).
+	 * vllm/qwen emit thinking in `reasoning`; we normalize to `reasoning_content`
+	 * so any OpenAI-compatible client (incl. pi) picks it up.
+	 */
+	thinking(delta: string): Record<string, unknown> {
+		return this.choice({ reasoning_content: delta });
 	}
 
 	toolCallStart(piContentIndex: number, id: string, name: string): Record<string, unknown> {
