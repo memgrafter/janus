@@ -111,6 +111,11 @@ function projectFromRequest(req: Request, body: unknown): string | undefined {
 	return undefined;
 }
 
+/** Convert the (seconds) config timeout to ms; 0 = disabled (very large backstop). */
+function timeoutMsFromConfig(config: Config): number {
+	return config.requestTimeoutS > 0 ? config.requestTimeoutS * 1000 : 2_147_483_647;
+}
+
 async function handleModels(client: Client): Promise<Response> {
 	const available = await client.models.getAvailable();
 	const list = modelListToOpenAI(available.map((m) => ({ id: `${m.provider}/${m.id}`, provider: m.provider })));
@@ -182,7 +187,7 @@ async function handleChat(req: Request, client: Client, control: Control, config
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
 	const options = toPiStreamOptions(internal);
-	options.timeoutMs = ctx.deadlineMs ?? config.requestTimeoutMs;
+	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream so a
 	// client timeout frees the provider instead of holding the request for the full
@@ -236,7 +241,7 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
 	const options = toPiStreamOptions(internal);
-	options.timeoutMs = ctx.deadlineMs ?? config.requestTimeoutMs;
+	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream.
 	options.signal = req.signal;
