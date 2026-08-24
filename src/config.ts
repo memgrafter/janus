@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { PlaneConfig } from "./control.ts";
 
 export interface Config {
@@ -20,6 +22,12 @@ export interface Config {
   planeConfigPath?: string;
   /** Path to a pi models.json file with custom providers to register. */
   modelsJsonPath?: string;
+  /**
+   * Path to pi's auth.json (OAuth credentials for subscription providers like
+   * openai-codex). Read/written by the FileCredentialStore. Defaults to
+   * ~/.pi/agent/auth.json. Set to a non-existent path to disable OAuth providers.
+   */
+  authJsonPath: string;
   /** Allocator tick interval in milliseconds. */
   allocMs: number;
 }
@@ -34,6 +42,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     fauxResponse: env["PI_JANUS_FAUX_RESPONSE"] ?? "pi-janus faux ok",
     planeConfigPath: env["PI_JANUS_CONFIG"] || undefined,
     modelsJsonPath: env["PI_JANUS_MODELS_JSON"] || undefined,
+    authJsonPath: env["PI_JANUS_AUTH_JSON"] || join(homedir(), ".pi", "agent", "auth.json"),
     allocMs: intEnv(env["PI_JANUS_ALLOC_MS"], 1000),
   };
 }
