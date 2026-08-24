@@ -4,8 +4,10 @@
  */
 
 import { createModels, fauxAssistantMessage, fauxProvider, type Api, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { registerModelsJson } from "./custom-providers.ts";
+import { FileCredentialStore } from "./credentials.ts";
 import type { Config } from "./config.ts";
 
 export interface Client {
@@ -15,7 +17,16 @@ export interface Client {
 }
 
 export async function createClient(config: Config): Promise<Client> {
-	const models: MutableModels = config.faux ? fauxModels(config) : builtinModels();
+	// Statically embed the OAuth flows (openai-codex, github-copilot, xai, ...) so
+	// they resolve in the compiled binary. pi-ai normally loads them via a
+	// bundler-opaque dynamic relative import that `bun build --compile` cannot
+	// resolve at runtime; registerBunOAuthFlows() replaces that with statically
+	// bundled loaders. Idempotent; a no-op in source mode where the dynamic import
+	// already works.
+	registerBunOAuthFlows();
+	const models: MutableModels = config.faux
+		? fauxModels(config)
+		: builtinModels({ credentials: new FileCredentialStore(config.authJsonPath) });
 	if (config.modelsJsonPath) {
 		const registered = registerModelsJson(models, config.modelsJsonPath);
 		if (registered.length > 0) console.log(`pi-janus: registered custom providers: ${registered.join(", ")}`);
