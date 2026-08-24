@@ -1,7 +1,7 @@
 ---
 id: pj-eskq
-status: in_progress
-open: true
+status: closed
+open: false
 deps: []
 links: []
 created: 2026-08-24T01:20:19Z
