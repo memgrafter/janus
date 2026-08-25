@@ -1,0 +1,47 @@
+# Default values for the inference-proxy chart.
+#
+# Generic/portable: every cluster-specific setting is a value, overridable per
+# cluster via a values file or --set (see values.example.yaml). Nothing here is
+# tied to a particular k3s install.
+
+image:
+  repository: inference-proxy   # full image ref, e.g. registry.local:5000/inference-proxy
+  pullPolicy: IfNotPresent
+  tag: ""                        # defaults to appVersion
+
+service:
+  type: LoadBalancer
+  port: 8787
+  loadBalancerIP: ""             # metallb-assigned; set to pin a specific IP
+
+# Durable storage for OAuth credentials (PI_JANUS_AUTH_JSON -> <mountPath>/auth.json).
+persistence:
+  enabled: true
+  storageClass: ""               # empty = cluster default; e.g. longhorn
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /data
+
+# Bearer token for API auth (PI_JANUS_TOKEN). Empty = no auth.
+auth:
+  existingSecret: ""             # k8s Secret name
+  tokenKey: token                # key within the secret
+
+# Provider API keys -> env (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY).
+# Built-in providers are auto-offered for each key present. Each entry:
+#   - name: <ENV_VAR>
+#     secret: <secretName>
+#     key: <keyInSecret>
+apiKeys: []
+#  - name: OPENAI_API_KEY
+#    secret: inference-proxy-keys
+#    key: openai
+
+# Catalog file (PI_JANUS_MODELS_JSON) for custom (non-built-in) providers.
+# Built-in providers come from the API keys above; this file adds custom ones
+# (e.g. a self-hosted vllm). Provide via an existing ConfigMap (key "models.json")
+# or inline (modelsJson).
+catalog:
+  enabled: false
+  existingConfigMap: ""
+  modelsJson: ""

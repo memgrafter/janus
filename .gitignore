@@ -1,5 +1,7 @@
 node_modules/
 dist/
+vendor/*
+!vendor/.gitkeep
 *.log
 .DS_Store
 .*.bun-build

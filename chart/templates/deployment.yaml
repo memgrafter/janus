@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inference-proxy.fullname" . }}
+  labels:
+    {{- include "inference-proxy.labels" . | nindent 4 }}
+spec:
+  # 1 replica: the auth store uses a local advisory lockfile (proper-lockfile),
+  # which is unsafe across multiple replicas sharing the PVC (advisory locks are
+  # unreliable on networked/CSI filesystems -> refresh-token double-spend).
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "inference-proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "inference-proxy.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.persistence.enabled }}
+      initContainers:
+        - name: fix-permissions
+          image: busybox:latest
+          command: ["sh", "-c", "chown -R 65532:65532 {{ .Values.persistence.mountPath }} 2>/dev/null || chmod -R 777 {{ .Values.persistence.mountPath }}"]
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+      {{- end }}
+      containers:
+        - name: proxy
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            - name: PI_JANUS_PORT
+              value: {{ .Values.service.port | quote }}
+            {{- if .Values.persistence.enabled }}
+            - name: PI_JANUS_AUTH_JSON
+              value: {{ .Values.persistence.mountPath }}/auth.json
+            {{- end }}
+            {{- if .Values.catalog.enabled }}
+            - name: PI_JANUS_MODELS_JSON
+              value: /etc/inference-proxy/models.json
+            {{- end }}
+            {{- if .Values.auth.existingSecret }}
+            - name: PI_JANUS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.tokenKey }}
+            {{- end }}
+            {{- range .Values.apiKeys }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secret }}
+                  key: {{ .key }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          {{- if or .Values.persistence.enabled .Values.catalog.enabled }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if .Values.catalog.enabled }}
+            - name: catalog
+              mountPath: /etc/inference-proxy
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.persistence.enabled .Values.catalog.enabled }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "inference-proxy.fullname" . }}-pvc
+        {{- end }}
+        {{- if .Values.catalog.enabled }}
+        - name: catalog
+          configMap:
+            name: {{ .Values.catalog.existingConfigMap | default (include "inference-proxy.fullname" .) }}
+        {{- end }}
+      {{- end }}

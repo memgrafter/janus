@@ -1,0 +1,6 @@
+apiVersion: v2
+name: inference-proxy
+description: OpenAI-compatible inference proxy + control plane (pi-janus)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
