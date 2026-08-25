@@ -1,0 +1,11 @@
+{{- if and .Values.catalog.enabled (not .Values.catalog.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "inference-proxy.fullname" . }}
+  labels:
+    {{- include "inference-proxy.labels" . | nindent 4 }}
+data:
+  models.json: |
+    {{- .Values.catalog.modelsJson | nindent 4 }}
+{{- end }}

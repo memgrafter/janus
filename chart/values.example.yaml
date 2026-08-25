@@ -1,0 +1,52 @@
+# Example instantiation for a longhorn + metallb k3s cluster.
+#
+# Prereqs (create once):
+#   kubectl create secret generic inference-proxy-token \
+#     --from-literal=token=<bearer-token>
+#   kubectl create secret generic inference-proxy-keys \
+#     --from-literal=openai=$OPENAI_API_KEY \
+#     --from-literal=deepseek=$DEEPSEEK_API_KEY \
+#     --from-literal=openrouter=$OPENROUTER_API_KEY
+#   kubectl create configmap inference-proxy-catalog \
+#     --from-file=models.json=./models.json
+#
+# Install:
+#   helm install inference-proxy ./chart/ -f chart/values.example.yaml \
+#     --set image.repository=registry.local:5000/inference-proxy \
+#     --set image.tag=<sha>
+
+image:
+  repository: registry.local:5000/inference-proxy
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: LoadBalancer
+  port: 8787
+  loadBalancerIP: "192.168.1.230"   # pin a metallb IP (or leave empty to auto-assign)
+
+persistence:
+  enabled: true
+  storageClass: longhorn
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /data
+
+auth:
+  existingSecret: inference-proxy-token
+  tokenKey: token
+
+apiKeys:
+  - name: OPENAI_API_KEY
+    secret: inference-proxy-keys
+    key: openai
+  - name: DEEPSEEK_API_KEY
+    secret: inference-proxy-keys
+    key: deepseek
+  - name: OPENROUTER_API_KEY
+    secret: inference-proxy-keys
+    key: openrouter
+
+catalog:
+  enabled: true
+  existingConfigMap: inference-proxy-catalog

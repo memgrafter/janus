@@ -1,0 +1,12 @@
+# Build-context exclusions.
+# Kept (needed by the build stage): src/, scripts/, package.json, bun.lock,
+# vendor/ (the vendored pi-ai), Dockerfile.
+node_modules/
+dist/
+.git/
+.tickets/
+test/
+chart/
+*.log
+.DS_Store
+.*.bun-build
