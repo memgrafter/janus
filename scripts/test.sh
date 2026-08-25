@@ -11,12 +11,12 @@ echo "==> [1/4] build"
 "$SCRIPT_DIR/build.sh"
 
 echo "==> [2/4] typecheck"
-( cd "$PI_JANUS_ROOT" && bunx tsc --noEmit )
+( cd "$JANUS_ROOT" && bunx tsc --noEmit )
 
 echo "==> [3/4] unit + integration tests"
-( cd "$PI_JANUS_ROOT" && bun test test/unit test/integration )
+( cd "$JANUS_ROOT" && bun test test/unit test/integration )
 
 echo "==> [4/4] live tests (built binary)"
-( cd "$PI_JANUS_ROOT" && bun test test/live )
+( cd "$JANUS_ROOT" && bun test test/live )
 
 echo "==> all tests passed"

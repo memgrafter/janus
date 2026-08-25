@@ -14,7 +14,7 @@ service:
   port: 8787
   loadBalancerIP: ""             # metallb-assigned; set to pin a specific IP
 
-# Durable storage for OAuth credentials (PI_JANUS_AUTH_JSON -> <mountPath>/auth.json).
+# Durable storage for OAuth credentials (JANUS_AUTH_JSON -> <mountPath>/auth.json).
 persistence:
   enabled: true
   storageClass: ""               # empty = cluster default; e.g. longhorn
@@ -22,7 +22,7 @@ persistence:
   size: 1Gi
   mountPath: /data
 
-# Bearer token for API auth (PI_JANUS_TOKEN). Empty = no auth.
+# Bearer token for API auth (JANUS_TOKEN). Empty = no auth.
 auth:
   existingSecret: ""             # k8s Secret name
   tokenKey: token                # key within the secret
@@ -37,7 +37,7 @@ apiKeys: []
 #    secret: janus-inference-control-plane-keys
 #    key: openai
 
-# Catalog file (PI_JANUS_MODELS_JSON) for custom (non-built-in) providers.
+# Catalog file (JANUS_MODELS_JSON) for custom (non-built-in) providers.
 # Built-in providers come from the API keys above; this file adds custom ones
 # (e.g. a self-hosted vllm). Provide via an existing ConfigMap (key "models.json")
 # or inline (modelsJson).

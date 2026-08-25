@@ -3,10 +3,10 @@
 set -euo pipefail
 
 # Repo root (parent of scripts/).
-PI_JANUS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+JANUS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BINARY_NAME="pi-janus"
-DIST_DIR="${PI_JANUS_ROOT}/dist"
-ENTRY="${PI_JANUS_ROOT}/src/index.ts"
+DIST_DIR="${JANUS_ROOT}/dist"
+ENTRY="${JANUS_ROOT}/src/index.ts"
 
 # All supported release platforms.
 PLATFORMS=(darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64 windows-arm64)
@@ -48,7 +48,7 @@ host_platform() {
 
 # Install dependencies (idempotent).
 ensure_deps() {
-	( cd "$PI_JANUS_ROOT" && bun install )
+	( cd "$JANUS_ROOT" && bun install )
 }
 
 # build_one <platform> <out-dir>
@@ -61,5 +61,5 @@ build_one() {
 	out="${out_dir}/${BINARY_NAME}$(binary_ext "$platform")"
 	mkdir -p "$out_dir"
 	echo "==> building ${platform} (${target}) -> ${out}"
-	( cd "$PI_JANUS_ROOT" && bun build --compile --no-compile-autoload-bunfig --target="$target" "$ENTRY" --outfile "$out" )
+	( cd "$JANUS_ROOT" && bun build --compile --no-compile-autoload-bunfig --target="$target" "$ENTRY" --outfile "$out" )
 }

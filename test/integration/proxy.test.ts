@@ -8,7 +8,7 @@ let base: string;
 let root: string;
 
 beforeAll(async () => {
-	const config = loadConfig({ PI_JANUS_FAUX: "1", PI_JANUS_FAUX_RESPONSE: "hello from faux" });
+	const config = loadConfig({ JANUS_FAUX: "1", JANUS_FAUX_RESPONSE: "hello from faux" });
 	handle = await createServer(config, 0); // port 0 -> OS-assigned
 	root = `http://127.0.0.1:${handle.port}`;
 	base = `${root}/v1`;

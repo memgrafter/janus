@@ -9,7 +9,7 @@ const basePlane = {
 };
 
 function makeConfig() {
-	return loadConfig({ PI_JANUS_FAUX: "1", PI_JANUS_FAUX_RESPONSE: "hello", PI_JANUS_ALLOC_MS: "20" });
+	return loadConfig({ JANUS_FAUX: "1", JANUS_FAUX_RESPONSE: "hello", JANUS_ALLOC_MS: "20" });
 }
 
 describe("control plane: categories + project routing", () => {
