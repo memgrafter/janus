@@ -52,9 +52,9 @@ export async function createServer(
 		async fetch(req) {
 			try {
 				const url = new URL(req.url);
-				if (!checkAuth(req, config)) return jsonResponse({ error: { message: "unauthorized", type: "auth_error", code: null } }, 401);
 				const path = url.pathname;
 				if (path === "/health") return new Response("ok", { status: 200 });
+				if (!checkAuth(req, config)) return jsonResponse({ error: { message: "unauthorized", type: "auth_error", code: null } }, 401);
 				if (path === "/v1/models" && req.method === "GET") return await handleModels(client);
 				if (path === "/v1/categories" && req.method === "GET") return handleCategories(control, client);
 				if (path === "/v1/telemetry" && req.method === "GET") return handleTelemetry(telemetry);
