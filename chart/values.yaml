@@ -26,7 +26,8 @@ persistence:
 # Bearer token for API auth (JANUS_TOKEN). Empty = no auth.
 auth:
   existingSecret: ""
-  existingAuthSecret: ""   # Secret with auth.json (for OAuth providers like openai-codex)             # k8s Secret name
+  existingAuthSecret: ""   # Secret with auth.json (for OAuth providers like openai-codex)
+  noLock: false              # JANUS_AUTH_NO_LOCK: skip cross-process lock (single-process deployments)             # k8s Secret name
   tokenKey: token                # key within the secret
 
 # Provider API keys -> env (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY).
