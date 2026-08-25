@@ -34,16 +34,16 @@ export interface Config {
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   return {
-    host: env["PI_JANUS_HOST"] ?? "127.0.0.1",
-    port: intEnv(env["PI_JANUS_PORT"], 8787),
-    token: env["PI_JANUS_TOKEN"] || undefined,
-    requestTimeoutS: intEnvClamped(env["PI_JANUS_TIMEOUT_S"], 600, 0, 99999),
-    faux: env["PI_JANUS_FAUX"] === "1" || env["PI_JANUS_FAUX"] === "true",
-    fauxResponse: env["PI_JANUS_FAUX_RESPONSE"] ?? "pi-janus faux ok",
-    planeConfigPath: env["PI_JANUS_CONFIG"] || undefined,
-    modelsJsonPath: env["PI_JANUS_MODELS_JSON"] || undefined,
-    authJsonPath: env["PI_JANUS_AUTH_JSON"] || join(homedir(), ".pi", "agent", "auth.json"),
-    allocMs: intEnv(env["PI_JANUS_ALLOC_MS"], 1000),
+    host: env["JANUS_HOST"] ?? "127.0.0.1",
+    port: intEnv(env["JANUS_PORT"], 8787),
+    token: env["JANUS_TOKEN"] || undefined,
+    requestTimeoutS: intEnvClamped(env["JANUS_TIMEOUT_S"], 600, 0, 99999),
+    faux: env["JANUS_FAUX"] === "1" || env["JANUS_FAUX"] === "true",
+    fauxResponse: env["JANUS_FAUX_RESPONSE"] ?? "pi-janus faux ok",
+    planeConfigPath: env["JANUS_CONFIG"] || undefined,
+    modelsJsonPath: env["JANUS_MODELS_JSON"] || undefined,
+    authJsonPath: env["JANUS_AUTH_JSON"] || join(homedir(), ".pi", "agent", "auth.json"),
+    allocMs: intEnv(env["JANUS_ALLOC_MS"], 1000),
   };
 }
 

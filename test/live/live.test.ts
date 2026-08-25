@@ -30,11 +30,11 @@ beforeAll(async () => {
 	proc = Bun.spawn([BINARY], {
 		env: {
 			...process.env,
-			PI_JANUS_FAUX: "1",
-			PI_JANUS_PORT: String(PORT),
-			PI_JANUS_FAUX_RESPONSE: "live faux ok",
-			PI_JANUS_CONFIG: PLANE,
-			PI_JANUS_ALLOC_MS: "20",
+			JANUS_FAUX: "1",
+			JANUS_PORT: String(PORT),
+			JANUS_FAUX_RESPONSE: "live faux ok",
+			JANUS_CONFIG: PLANE,
+			JANUS_ALLOC_MS: "20",
 		},
 		stdout: "pipe",
 		stderr: "pipe",

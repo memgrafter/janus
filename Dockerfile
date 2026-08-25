@@ -13,8 +13,8 @@
 #   # target a specific arch (buildx):
 #   docker buildx build --platform linux/amd64 -t <registry>/janus-inference-control-plane:<tag> --load .
 #
-# The runtime image is inert until you set env (API keys, PI_JANUS_AUTH_JSON,
-# PI_JANUS_MODELS_JSON, PI_JANUS_TOKEN) — see chart/ for the k8s wiring.
+# The runtime image is inert until you set env (API keys, JANUS_AUTH_JSON,
+# JANUS_MODELS_JSON, JANUS_TOKEN) — see chart/ for the k8s wiring.
 
 # ---- build: compile the static binary with the vendored (modified) pi-ai ----
 FROM oven/bun:1 AS build
@@ -58,8 +58,8 @@ RUN set -euo pipefail; \
 # ---- runtime: minimal, non-root (glibc for the bun binary) ----
 FROM gcr.io/distroless/base-debian12:nonroot
 # A container must listen on all interfaces (the binary's default 127.0.0.1 is
-# for local-proxy mode). Override with PI_JANUS_HOST if needed.
-ENV PI_JANUS_HOST=0.0.0.0
+# for local-proxy mode). Override with JANUS_HOST if needed.
+ENV JANUS_HOST=0.0.0.0
 COPY --from=build /out/pi-janus /pi-janus
 EXPOSE 8787
 USER nonroot

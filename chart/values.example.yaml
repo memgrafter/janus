@@ -1,35 +1,36 @@
-# Example instantiation for a longhorn + metallb k3s cluster.
+# Example values for a longhorn + metallb k3s cluster.
 #
-# Prereqs (create once):
-#   kubectl create secret generic janus-inference-control-plane-token \
+# Mirrors a real instantiation; cluster-specific values (registry, metallb IP)
+# are placeholders — replace them for your cluster.
+#
+# Prereqs (create once in the target namespace):
+#   kubectl -n <ns> create secret generic janus-inference-control-plane-token \
 #     --from-literal=token=<bearer-token>
-#   kubectl create secret generic janus-inference-control-plane-keys \
+#   kubectl -n <ns> create secret generic janus-inference-control-plane-keys \
 #     --from-literal=openai=$OPENAI_API_KEY \
 #     --from-literal=deepseek=$DEEPSEEK_API_KEY \
 #     --from-literal=openrouter=$OPENROUTER_API_KEY
-#   kubectl create configmap janus-inference-control-plane-catalog \
-#     --from-file=models.json=./models.json
 #
 # Install:
-#   helm install janus-inference-control-plane ./chart/ -f chart/values.example.yaml \
-#     --set image.repository=registry.local:5000/janus-inference-control-plane \
-#     --set image.tag=<sha>
+#   helm install janus-inference-control-plane ./chart/ \
+#     -f chart/values.example.yaml \
+#     -n janus-inference-control-plane --create-namespace
 
 image:
-  repository: registry.local:5000/janus-inference-control-plane
+  repository: __REGISTRY__/janus-inference-control-plane   # your registry host
   pullPolicy: IfNotPresent
   tag: "latest"
 
 service:
   type: LoadBalancer
   port: 8787
-  loadBalancerIP: "192.168.1.230"   # pin a metallb IP (or leave empty to auto-assign)
+  loadBalancerIP: "<METALLB_IP>"   # pin a metallb IP from your pool (or "" to auto-assign)
 
 persistence:
   enabled: true
   storageClass: longhorn
   accessMode: ReadWriteOnce
-  size: 1Gi
+  size: 256Mi   # only holds auth.json (~KB) + lockfile
   mountPath: /data
 
 auth:
@@ -48,5 +49,4 @@ apiKeys:
     key: openrouter
 
 catalog:
-  enabled: true
-  existingConfigMap: janus-inference-control-plane-catalog
+  enabled: false   # enable for custom providers (vllm, etc.)
