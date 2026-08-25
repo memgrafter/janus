@@ -100,7 +100,7 @@ Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the
 
 ## pi-ai API surface used
 
-Pinned to `@earendil-works/pi-ai@0.84.2` (exact). Verified against `~/clones/pi-mono-dev/packages/ai`.
+Pinned to `@earendil-works/pi-ai@0.84.3` (exact). Verified against `~/clones/pi-mono/packages/ai` (main).
 
 - **Main entry** `@earendil-works/pi-ai`: `createModels`, `createProvider`, `fauxProvider`, `fauxAssistantMessage`; types `Model`, `Context`, `StreamOptions`, `AssistantMessage`, `AssistantMessageEvent`, `Usage`, `Tool`, `TSchema`, `Api`.
 - **Subpath** `@earendil-works/pi-ai/providers/all`: `builtinModels()` (registers all built-in providers; reads provider keys from env).
@@ -141,7 +141,7 @@ Work is tracked with the `tk` CLI (file-based, in-repo `.tickets/`). Key command
 
 ## Reference
 
-- pi-mono source: `~/clones/pi-mono` (detached at v0.84.2) and `~/clones/pi-mono-dev` (branch `dev`, tracks `upstream/dev`).
+- pi-mono source: `~/clones/pi-mono` (on `main`, v0.84.3) and `~/clones/pi-mono-dev` (branch `dev`, tracks `upstream/dev`).
 - pi-ai source (the dependency): `~/clones/pi-mono-dev/packages/ai`.
 - Key pi-ai files: `src/types.ts` (Model, Usage, DeferredHandle, StreamOptions, AssistantMessageEvent), `src/models.ts` (Models, createModels, createProvider, fetchDeferred), `src/providers/faux.ts` (faux provider + deferred impl).
 - pi-ai is **client-only** — no HTTP server, no `/v1/models`, no `/v1/chat/completions` anywhere in pi-mono. pi-janus builds the server.

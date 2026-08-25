@@ -50,6 +50,71 @@ describe("toPiStreamOptions", () => {
 		expect(opts.temperature).toBe(0.3);
 		expect(opts.maxTokens).toBe(55);
 	});
+
+	it("omits onPayload when the client sends no reasoning effort", () => {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false });
+		expect(opts.onPayload).toBeUndefined();
+	});
+});
+
+describe("toPiStreamOptions qwen reasoning_effort", () => {
+	const qwenModel = (overrides: Record<string, unknown> = {}): Model<Api> =>
+		({
+			id: "qwen3.8-27b",
+			provider: "vert-qwen38-dual-fast",
+			api: "openai-completions",
+			reasoning: true,
+			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true },
+			...overrides,
+		}) as unknown as Model<Api>;
+
+	// Run the options' onPayload against a pi-ai-shaped qwen payload (as
+	// buildParams would produce it) and return the result.
+	function transformed(req: { reasoningEffort?: string }, model: Model<Api>): unknown {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, ...req });
+		expect(opts.onPayload).toBeInstanceOf(Function);
+		const payload = { model: "m", messages: [], chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } };
+		return opts.onPayload!(payload, model);
+	}
+
+	it("adds mapped reasoning_effort for qwen-chat-template models", () => {
+		for (const [effort, expected] of [
+			["minimal", "low"],
+			["low", "low"],
+			["medium", "medium"],
+			["high", "xhigh"],
+			["xhigh", "xhigh"],
+			["max", "xhigh"],
+		] as const) {
+			const out = transformed({ reasoningEffort: effort }, qwenModel()) as Record<string, unknown>;
+			expect(out.reasoning_effort).toBe(expected);
+			// Existing payload fields are preserved.
+			expect(out.chat_template_kwargs).toEqual({ enable_thinking: true, preserve_thinking: true });
+		}
+	});
+
+	it("prefers thinkingLevelMap over the default mapping", () => {
+		const out = transformed({ reasoningEffort: "high" }, qwenModel({ thinkingLevelMap: { high: "custom" } })) as Record<string, unknown>;
+		expect(out.reasoning_effort).toBe("custom");
+	});
+
+	it("leaves the payload unchanged when supportsReasoningEffort is false", () => {
+		const out = transformed(
+			{ reasoningEffort: "high" },
+			qwenModel({ compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: false } }),
+		);
+		expect(out).toBeUndefined();
+	});
+
+	it("leaves the payload unchanged for other thinking formats", () => {
+		const out = transformed({ reasoningEffort: "high" }, qwenModel({ compat: { thinkingFormat: "openai", supportsReasoningEffort: true } }));
+		expect(out).toBeUndefined();
+	});
+
+	it("leaves the payload unchanged for non-reasoning models", () => {
+		const out = transformed({ reasoningEffort: "high" }, qwenModel({ reasoning: false }));
+		expect(out).toBeUndefined();
+	});
 });
 
 describe("assistantMessageToInternal", () => {
