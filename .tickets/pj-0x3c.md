@@ -26,7 +26,7 @@ Decisions made:
 1. Custom providers: a catalog file included in the helm chart (mounted, PI_JANUS_MODELS_JSON).
 2. Credential seeding: import for now — a shell script that runs pi with a scratch agent dir (PI_CODING_AGENT_DIR), the user does the OAuth login, the resulting auth.json is copied into the PVC and the scratch dir deleted. (No self-serve login endpoint in the proxy, for now.)
 
-The helm chart lives in ~/code/k3s_maintenance/ as a NEW chart. The "pi-janus" naming is dropped (more middlewares will be added) — chart/service name TBD (working name: inference-proxy).
+The helm chart lives in ~/code/k3s_maintenance/ as a NEW chart. The "pi-janus" naming is dropped (more middlewares will be added) — chart/service name TBD (working name: janus-inference-control-plane).
 
 ## Design
 

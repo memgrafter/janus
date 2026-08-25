@@ -9,9 +9,9 @@
 #   ./scripts/vendor-pi-ai.sh          # -> vendor/pi-ai/  (from $PI_MONO_AI)
 #
 # Build:
-#   docker build -t <registry>/inference-proxy:<tag> .
+#   docker build -t <registry>/janus-inference-control-plane:<tag> .
 #   # target a specific arch (buildx):
-#   docker buildx build --platform linux/amd64 -t <registry>/inference-proxy:<tag> --load .
+#   docker buildx build --platform linux/amd64 -t <registry>/janus-inference-control-plane:<tag> --load .
 #
 # The runtime image is inert until you set env (API keys, PI_JANUS_AUTH_JSON,
 # PI_JANUS_MODELS_JSON, PI_JANUS_TOKEN) — see chart/ for the k8s wiring.
