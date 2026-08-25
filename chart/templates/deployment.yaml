@@ -19,6 +19,10 @@ spec:
       labels:
         {{- include "janus-inference-control-plane.selectorLabels" . | nindent 8 }}
     spec:
+      {{- if .Values.image.pullSecret }}
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      {{- end }}
       {{- if .Values.persistence.enabled }}
       initContainers:
         - name: fix-permissions
