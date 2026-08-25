@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "inference-proxy.fullname" . }}
+  name: {{ include "janus-inference-control-plane.fullname" . }}
   labels:
-    {{- include "inference-proxy.labels" . | nindent 4 }}
+    {{- include "janus-inference-control-plane.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,7 +12,7 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "inference-proxy.selectorLabels" . | nindent 4 }}
+    {{- include "janus-inference-control-plane.selectorLabels" . | nindent 4 }}
   {{- if eq .Values.service.type "LoadBalancer" }}
   {{- if .Values.service.loadBalancerIP }}
   loadBalancerIP: {{ .Values.service.loadBalancerIP }}

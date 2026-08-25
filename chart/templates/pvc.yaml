@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "inference-proxy.fullname" . }}-pvc
+  name: {{ include "janus-inference-control-plane.fullname" . }}-pvc
   labels:
-    {{- include "inference-proxy.labels" . | nindent 4 }}
+    {{- include "janus-inference-control-plane.labels" . | nindent 4 }}
 spec:
   accessModes:
     - {{ .Values.persistence.accessMode | quote }}

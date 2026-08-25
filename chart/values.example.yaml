@@ -1,22 +1,22 @@
 # Example instantiation for a longhorn + metallb k3s cluster.
 #
 # Prereqs (create once):
-#   kubectl create secret generic inference-proxy-token \
+#   kubectl create secret generic janus-inference-control-plane-token \
 #     --from-literal=token=<bearer-token>
-#   kubectl create secret generic inference-proxy-keys \
+#   kubectl create secret generic janus-inference-control-plane-keys \
 #     --from-literal=openai=$OPENAI_API_KEY \
 #     --from-literal=deepseek=$DEEPSEEK_API_KEY \
 #     --from-literal=openrouter=$OPENROUTER_API_KEY
-#   kubectl create configmap inference-proxy-catalog \
+#   kubectl create configmap janus-inference-control-plane-catalog \
 #     --from-file=models.json=./models.json
 #
 # Install:
-#   helm install inference-proxy ./chart/ -f chart/values.example.yaml \
-#     --set image.repository=registry.local:5000/inference-proxy \
+#   helm install janus-inference-control-plane ./chart/ -f chart/values.example.yaml \
+#     --set image.repository=registry.local:5000/janus-inference-control-plane \
 #     --set image.tag=<sha>
 
 image:
-  repository: registry.local:5000/inference-proxy
+  repository: registry.local:5000/janus-inference-control-plane
   pullPolicy: IfNotPresent
   tag: "latest"
 
@@ -33,20 +33,20 @@ persistence:
   mountPath: /data
 
 auth:
-  existingSecret: inference-proxy-token
+  existingSecret: janus-inference-control-plane-token
   tokenKey: token
 
 apiKeys:
   - name: OPENAI_API_KEY
-    secret: inference-proxy-keys
+    secret: janus-inference-control-plane-keys
     key: openai
   - name: DEEPSEEK_API_KEY
-    secret: inference-proxy-keys
+    secret: janus-inference-control-plane-keys
     key: deepseek
   - name: OPENROUTER_API_KEY
-    secret: inference-proxy-keys
+    secret: janus-inference-control-plane-keys
     key: openrouter
 
 catalog:
   enabled: true
-  existingConfigMap: inference-proxy-catalog
+  existingConfigMap: janus-inference-control-plane-catalog

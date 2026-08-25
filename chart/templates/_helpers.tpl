@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "inference-proxy.name" -}}
+{{- define "janus-inference-control-plane.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -11,7 +11,7 @@ We truncate at 63 chars because some Kubernetes name fields are limited to this
 (by the DNS naming spec). If the release name contains the chart name it will
 be used as the full name.
 */}}
-{{- define "inference-proxy.fullname" -}}
+{{- define "janus-inference-control-plane.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -27,9 +27,9 @@ be used as the full name.
 {{/*
 Create chart labels.
 */}}
-{{- define "inference-proxy.labels" -}}
-helm.sh/chart: {{ include "inference-proxy.name" . }}-{{ .Chart.Version | replace "+" "_" }}
-{{ include "inference-proxy.selectorLabels" . }}
+{{- define "janus-inference-control-plane.labels" -}}
+helm.sh/chart: {{ include "janus-inference-control-plane.name" . }}-{{ .Chart.Version | replace "+" "_" }}
+{{ include "janus-inference-control-plane.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -39,7 +39,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels.
 */}}
-{{- define "inference-proxy.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "inference-proxy.name" . }}
+{{- define "janus-inference-control-plane.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "janus-inference-control-plane.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
