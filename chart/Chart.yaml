@@ -1,6 +1,6 @@
 apiVersion: v2
 name: janus-inference-control-plane
-description: OpenAI-compatible inference proxy + control plane (pi-janus)
+description: OpenAI-compatible inference proxy + control plane (janus)
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
