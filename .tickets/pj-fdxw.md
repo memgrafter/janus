@@ -1,7 +1,7 @@
 ---
 id: pj-fdxw
-status: open
-open: true
+status: closed
+open: false
 deps: [pj-arr0]
 links: []
 created: 2026-08-25T13:10:59Z

@@ -1,7 +1,7 @@
 ---
 id: pj-arr0
-status: open
-open: true
+status: closed
+open: false
 deps: []
 links: []
 created: 2026-08-25T13:10:59Z
