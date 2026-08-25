@@ -25,3 +25,9 @@ Catalog file content = custom (non-built-in) providers only (built-ins come from
 ## Acceptance
 
 helm install (with a values file + pre-existing Secret + ConfigMap) brings up 1 pod behind a metallb IP; /v1/models shows env-key providers + catalog providers + persisted OAuth providers; a chat completion to each category succeeds via the metallb IP; helm uninstall cleans up (PVC retention documented).
+
+## Notes
+
+**2026-08-25T13:46:05Z**
+
+First version built + verified (commit f868343). chart/ at repo root, name "inference-proxy" (pi-janus naming dropped; rename if a better name is chosen). Generic/portable — all cluster-specifics are values (see values.example.yaml for a longhorn+metallb instantiation). Resources: 1-replica Deployment (Recreate; 1-replica is REQUIRED — proper-lockfile advisory locks are unsafe across replicas sharing the PVC), metallb LoadBalancer Service (loadBalancerIP value), longhorn PVC (auth, ReadWriteOnce), catalog ConfigMap (custom providers; existing or inline modelsJson), Secrets (API keys via apiKeys list, bearer via auth.existingSecret). initContainer chowns /data to 65532 (distroless nonroot). readiness+liveness probes on /health. Verified: helm lint clean; helm template renders valid YAML for defaults, example values, and inline-catalog path. Next: bring into ~/code/k3s_maintenance/ for instantiation (back-and-forth expected).

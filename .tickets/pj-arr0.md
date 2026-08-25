@@ -22,3 +22,9 @@ bun build --compile already produces a static binary. Dockerfile: FROM scratch (
 ## Acceptance
 
 docker build produces an image; k3s pulls and runs it; /health returns ok; a chat completion works.
+
+## Notes
+
+**2026-08-25T13:46:05Z**
+
+First version built + verified (commit f868343). Dockerfile at repo root: multi-stage (oven/bun build -> gcr.io/distroless/base-debian12:nonroot). Binds 0.0.0.0 (container default; local-proxy mode still defaults to 127.0.0.1). The pi-ai step is TOLERANT: overlays vendor/pi-ai/ only if present (scripts/vendor-pi-ai.sh, from $PI_MONO_AI default ~/clones/pi-mono/packages/ai), else uses whatever bun install resolves — so it composes with however the pi-ai change is imported (another agent is handling that import; do not alter their bridge.ts changes). Verified: docker build (arm64, colima) -> container serves /health + /v1/chat/completions (faux). TARGETARCH arg supports buildx multi-arch. Open: push to a real registry (registry TBD) + tag by git sha.
