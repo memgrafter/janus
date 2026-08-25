@@ -26,7 +26,7 @@ export async function createClient(config: Config): Promise<Client> {
 	registerBunOAuthFlows();
 	const models: MutableModels = config.faux
 		? fauxModels(config)
-		: builtinModels({ credentials: new FileCredentialStore(config.authJsonPath) });
+		: builtinModels({ credentials: new FileCredentialStore(config.authJsonPath, config.authNoLock) });
 	if (config.modelsJsonPath) {
 		const registered = registerModelsJson(models, config.modelsJsonPath);
 		if (registered.length > 0) console.log(`pi-janus: registered custom providers: ${registered.join(", ")}`);

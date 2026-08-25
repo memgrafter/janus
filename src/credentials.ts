@@ -66,9 +66,11 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 export class FileCredentialStore implements CredentialStore {
 	private readonly authPath: string;
+	private readonly noLock: boolean;
 
-	constructor(authPath: string = DEFAULT_AUTH_PATH) {
+	constructor(authPath: string = DEFAULT_AUTH_PATH, noLock = false) {
 		this.authPath = normalizePath(authPath);
+		this.noLock = noLock;
 	}
 
 	get path(): string {
@@ -134,6 +136,20 @@ export class FileCredentialStore implements CredentialStore {
 		signal?.throwIfAborted();
 		this.ensureParentDir();
 		this.ensureFileExists();
+
+		// Single-process mode (e.g. a container with no other writer): skip the
+		// cross-process lock. Refreshes still work; concurrent double-spend is
+		// not a risk when only this process touches the file.
+		if (this.noLock) {
+			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
+			const { result, next } = await fn(current);
+			signal?.throwIfAborted();
+			if (next !== undefined) {
+				writeFileSync(this.authPath, next, WRITE_OPTIONS);
+				chmodSync(this.authPath, 0o600);
+			}
+			return result;
+		}
 
 		const release = await this.acquireLock(signal);
 		try {

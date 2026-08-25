@@ -60,6 +60,10 @@ spec:
             - name: JANUS_AUTH_JSON
               value: {{ .Values.persistence.mountPath }}/auth.json
             {{- end }}
+            {{- if .Values.auth.noLock }}
+            - name: JANUS_AUTH_NO_LOCK
+              value: "1"
+            {{- end }}
             {{- if .Values.catalog.enabled }}
             - name: JANUS_MODELS_JSON
               value: /etc/janus-inference-control-plane/models.json

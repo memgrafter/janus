@@ -28,6 +28,12 @@ export interface Config {
    * ~/.pi/agent/auth.json. Set to a non-existent path to disable OAuth providers.
    */
   authJsonPath: string;
+  /**
+   * Skip the cross-process auth.json lock (JANUS_AUTH_NO_LOCK=1). Safe when a
+   * single process owns the file (e.g. a container); avoids lock-file I/O on
+   * network filesystems.
+   */
+  authNoLock: boolean;
   /** Allocator tick interval in milliseconds. */
   allocMs: number;
 }
@@ -43,6 +49,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     planeConfigPath: env["JANUS_CONFIG"] || undefined,
     modelsJsonPath: env["JANUS_MODELS_JSON"] || undefined,
     authJsonPath: env["JANUS_AUTH_JSON"] || join(homedir(), ".pi", "agent", "auth.json"),
+    authNoLock: env["JANUS_AUTH_NO_LOCK"] === "1" || env["JANUS_AUTH_NO_LOCK"] === "true",
     allocMs: intEnv(env["JANUS_ALLOC_MS"], 1000),
   };
 }
