@@ -23,14 +23,27 @@ spec:
       imagePullSecrets:
         - name: {{ .Values.image.pullSecret }}
       {{- end }}
-      {{- if .Values.persistence.enabled }}
+      {{- if or .Values.persistence.enabled .Values.auth.existingAuthSecret }}
       initContainers:
+        {{- if .Values.persistence.enabled }}
         - name: fix-permissions
           image: busybox:latest
           command: ["sh", "-c", "chown -R 65532:65532 {{ .Values.persistence.mountPath }} 2>/dev/null || chmod -R 777 {{ .Values.persistence.mountPath }}"]
           volumeMounts:
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
+        {{- end }}
+        {{- if .Values.auth.existingAuthSecret }}
+        - name: seed-auth
+          image: busybox:latest
+          command: ["sh", "-c", "cp /auth/auth.json {{ .Values.persistence.mountPath }}/auth.json && chown 65532:65532 {{ .Values.persistence.mountPath }}/auth.json"]
+          volumeMounts:
+            - name: auth-seed
+              mountPath: /auth
+              readOnly: true
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+        {{- end }}
       {{- end }}
       containers:
         - name: proxy
@@ -88,7 +101,7 @@ spec:
               mountPath: /etc/janus-inference-control-plane
             {{- end }}
           {{- end }}
-      {{- if or .Values.persistence.enabled .Values.catalog.enabled }}
+      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.auth.existingAuthSecret }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -99,5 +112,10 @@ spec:
         - name: catalog
           configMap:
             name: {{ .Values.catalog.existingConfigMap | default (include "janus-inference-control-plane.fullname" .) }}
+        {{- end }}
+        {{- if .Values.auth.existingAuthSecret }}
+        - name: auth-seed
+          secret:
+            secretName: {{ .Values.auth.existingAuthSecret }}
         {{- end }}
       {{- end }}
