@@ -7,6 +7,7 @@
 image:
   repository: janus-inference-control-plane   # full image ref, e.g. registry.local:5000/janus-inference-control-plane
   pullPolicy: IfNotPresent
+  pullSecret: ""   # name of an imagePullSecret (for private registries)
   tag: ""                        # defaults to appVersion
 
 service:
