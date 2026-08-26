@@ -117,6 +117,55 @@ describe("toPiStreamOptions qwen reasoning_effort", () => {
 	});
 });
 
+describe("toPiStreamOptions thinking token budget", () => {
+	const qwenModel = (overrides: Record<string, unknown> = {}): Model<Api> =>
+		({
+			id: "qwen3.8-27b",
+			provider: "vert-qwen38-dual-fast",
+			api: "openai-completions",
+			reasoning: true,
+			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true },
+			...overrides,
+		}) as unknown as Model<Api>;
+
+	function transformed(req: { thinkingTokenBudget?: number }, model: Model<Api>): unknown {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, ...req });
+		expect(opts.onPayload).toBeInstanceOf(Function);
+		const payload = { model: "m", messages: [], chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } };
+		return opts.onPayload!(payload, model);
+	}
+
+	it("adds both budget fields for qwen-chat-template models", () => {
+		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel()) as Record<string, unknown>;
+		expect(out.thinking_token_budget).toBe(1024);
+		expect(out.thinking_budget_tokens).toBe(1024);
+		expect(out.chat_template_kwargs).toEqual({ enable_thinking: true, preserve_thinking: true });
+	});
+
+	it("combines budget with mapped reasoning_effort", () => {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, reasoningEffort: "high", thinkingTokenBudget: 2048 });
+		const out = opts.onPayload!({ model: "m", messages: [] }, qwenModel()) as Record<string, unknown>;
+		expect(out.reasoning_effort).toBe("xhigh");
+		expect(out.thinking_token_budget).toBe(2048);
+		expect(out.thinking_budget_tokens).toBe(2048);
+	});
+
+	it("omits onPayload when the client sends no budget and no effort", () => {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false });
+		expect(opts.onPayload).toBeUndefined();
+	});
+
+	it("leaves the payload unchanged for other thinking formats", () => {
+		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel({ compat: { thinkingFormat: "openai", supportsReasoningEffort: true } }));
+		expect(out).toBeUndefined();
+	});
+
+	it("leaves the payload unchanged for non-reasoning models", () => {
+		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel({ reasoning: false }));
+		expect(out).toBeUndefined();
+	});
+});
+
 describe("assistantMessageToInternal", () => {
 	it("maps text and usage", () => {
 		const msg = {

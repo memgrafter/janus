@@ -73,25 +73,45 @@ export function toPiStreamOptions(req: InternalRequest): StreamOptions {
 		// not on the base StreamOptions, but models.stream accepts it via the
 		// ModelsApiStreamOptions cast. pi-ai gates thinking on it being truthy.
 		(opts as { reasoningEffort?: string }).reasoningEffort = req.reasoningEffort;
-		opts.onPayload = (payload, model) => addQwenReasoningEffort(payload, model, req.reasoningEffort);
+	}
+	if (req.reasoningEffort !== undefined || req.thinkingTokenBudget !== undefined) {
+		opts.onPayload = (payload, model) => addQwenReasoningControls(payload, model, req.reasoningEffort, req.thinkingTokenBudget);
 	}
 	return opts;
 }
 
 /**
- * onPayload that adds a top-level reasoning_effort for qwen-chat-template
- * models that advertise supportsReasoningEffort. Returns undefined (payload
- * unchanged) for every other model or when no effort was requested.
+ * onPayload that adds backend-specific reasoning controls for qwen-chat-template
+ * models: a top-level reasoning_effort (when the client requested effort and the
+ * model advertises supportsReasoningEffort) and/or the reasoning token budget
+ * (thinking_token_budget for vLLM, thinking_budget_tokens for llama.cpp).
+ * Returns undefined (payload unchanged) when nothing applies.
  */
-function addQwenReasoningEffort(payload: unknown, model: Model<Api>, effort: string | undefined): unknown | undefined {
-	if (!effort) return;
-	const m = model as Model<"openai-completions">;
-	const compat = m.compat;
-	if (!m.reasoning || compat?.thinkingFormat !== "qwen-chat-template" || !compat.supportsReasoningEffort) return;
+function addQwenReasoningControls(
+	payload: unknown,
+	model: Model<Api>,
+	effort: string | undefined,
+	budget: number | undefined,
+): unknown | undefined {
 	if (!payload || typeof payload !== "object") return;
-	const mapped = m.thinkingLevelMap?.[effort as ModelThinkingLevel] ?? QWEN_EFFORT[effort];
-	if (mapped == null) return;
-	return { ...(payload as Record<string, unknown>), reasoning_effort: mapped };
+	const m = model as Model<"openai-completions">;
+	if (!m.reasoning || m.compat?.thinkingFormat !== "qwen-chat-template") return;
+	const out = { ...(payload as Record<string, unknown>) };
+	let changed = false;
+	if (effort && m.compat.supportsReasoningEffort) {
+		const mapped = m.thinkingLevelMap?.[effort as ModelThinkingLevel] ?? QWEN_EFFORT[effort];
+		if (mapped != null) {
+			out.reasoning_effort = mapped;
+			changed = true;
+		}
+	}
+	if (budget !== undefined) {
+		// vLLM reads thinking_token_budget; llama.cpp reads thinking_budget_tokens.
+		out.thinking_token_budget = budget;
+		out.thinking_budget_tokens = budget;
+		changed = true;
+	}
+	return changed ? out : undefined;
 }
 
 export function assistantMessageToInternal(msg: AssistantMessage): InternalResponse {

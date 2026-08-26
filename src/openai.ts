@@ -41,6 +41,12 @@ export interface InternalRequest {
 	 * for providers that key off it (e.g. qwen-chat-template enable_thinking).
 	 */
 	reasoningEffort?: string;
+	/**
+	 * Per-request reasoning token budget. Set from `thinking_token_budget`
+	 * (vLLM) or `thinking_budget_tokens` (llama.cpp). Forwarded to the
+	 * downstream payload so the backend can cap reasoning length.
+	 */
+	thinkingTokenBudget?: number;
 	stream: boolean;
 }
 
@@ -100,6 +106,7 @@ export function parseChatRequest(body: unknown): InternalRequest {
 					? b.max_completion_tokens
 					: undefined,
 		reasoningEffort: parseReasoningEffort(b),
+		thinkingTokenBudget: parseThinkingTokenBudget(b),
 		stream: b.stream === true,
 	};
 }
@@ -116,6 +123,17 @@ function parseReasoningEffort(b: Record<string, any> | null): string | undefined
 	const enable = b?.chat_template_kwargs?.enable_thinking;
 	if (enable === true) return "medium";
 	if (enable === false) return undefined;
+	return undefined;
+}
+
+/**
+ * Read the reasoning token budget from the request body. Accepts both
+ * `thinking_token_budget` (vLLM sampling param) and `thinking_budget_tokens`
+ * (llama.cpp) so the same client field works across backends.
+ */
+function parseThinkingTokenBudget(b: Record<string, any> | null): number | undefined {
+	if (typeof b?.thinking_token_budget === "number") return b.thinking_token_budget;
+	if (typeof b?.thinking_budget_tokens === "number") return b.thinking_budget_tokens;
 	return undefined;
 }
 

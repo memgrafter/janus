@@ -36,6 +36,26 @@ describe("parseChatRequest", () => {
 		expect(r.maxTokens).toBe(42);
 	});
 
+	it("parses thinking_token_budget (vLLM)", () => {
+		const r = parseChatRequest({ model: "m", messages: [], thinking_token_budget: 1024 });
+		expect(r.thinkingTokenBudget).toBe(1024);
+	});
+
+	it("parses thinking_budget_tokens (llama.cpp)", () => {
+		const r = parseChatRequest({ model: "m", messages: [], thinking_budget_tokens: 2048 });
+		expect(r.thinkingTokenBudget).toBe(2048);
+	});
+
+	it("prefers thinking_token_budget over thinking_budget_tokens", () => {
+		const r = parseChatRequest({ model: "m", messages: [], thinking_token_budget: 1024, thinking_budget_tokens: 2048 });
+		expect(r.thinkingTokenBudget).toBe(1024);
+	});
+
+	it("ignores non-numeric budget values", () => {
+		const r = parseChatRequest({ model: "m", messages: [], thinking_token_budget: "1024" });
+		expect(r.thinkingTokenBudget).toBeUndefined();
+	});
+
 	it("parses assistant tool_calls with string arguments", () => {
 		const r = parseChatRequest({
 			model: "m",
