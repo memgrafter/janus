@@ -64,7 +64,7 @@ const QWEN_EFFORT: Record<string, string> = {
 	max: "xhigh",
 };
 
-export function toPiStreamOptions(req: InternalRequest): StreamOptions {
+export function toPiStreamOptions(req: InternalRequest, extraOnPayload?: (payload: unknown, model: Model<Api>) => unknown | undefined): StreamOptions {
 	const opts: StreamOptions = {};
 	if (req.temperature !== undefined) opts.temperature = req.temperature;
 	if (req.maxTokens !== undefined) opts.maxTokens = req.maxTokens;
@@ -76,6 +76,10 @@ export function toPiStreamOptions(req: InternalRequest): StreamOptions {
 	}
 	if (req.reasoningEffort !== undefined || req.thinkingTokenBudget !== undefined) {
 		opts.onPayload = (payload, model) => addQwenReasoningControls(payload, model, req.reasoningEffort, req.thinkingTokenBudget);
+	}
+	if (extraOnPayload) {
+		const qwen = opts.onPayload;
+		opts.onPayload = (payload, model) => extraOnPayload(qwen ? qwen(payload, model) : payload, model);
 	}
 	return opts;
 }

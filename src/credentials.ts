@@ -215,3 +215,43 @@ export class FileCredentialStore implements CredentialStore {
 		);
 	}
 }
+
+/**
+ * A CredentialStore that routes a set of provider ids to a dedicated sub-store
+ * and everything else to a default store. Used to serve the ClinePass provider
+ * from the Cline CLI's providers.json while all other providers keep using
+ * auth.json — a single Models collection has one credential store, so the
+ * routing store keeps each provider's tokens in the right file.
+ */
+export class RoutingCredentialStore implements CredentialStore {
+	constructor(
+		private readonly defaultStore: CredentialStore,
+		private readonly routes: Record<string, CredentialStore>,
+	) {}
+
+	private storeFor(providerId: string): CredentialStore {
+		return this.routes[providerId] ?? this.defaultStore;
+	}
+
+	async read(providerId: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
+		return this.storeFor(providerId).read(providerId, options);
+	}
+
+	async list(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
+		const stores = [this.defaultStore, ...new Set(Object.values(this.routes))];
+		const all = await Promise.all(stores.map((s) => s.list(options)));
+		return all.flat();
+	}
+
+	async modify(
+		providerId: string,
+		fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+		options?: AuthOperationOptions,
+	): Promise<Credential | undefined> {
+		return this.storeFor(providerId).modify(providerId, fn, options);
+	}
+
+	async delete(providerId: string, options?: AuthOperationOptions): Promise<void> {
+		await this.storeFor(providerId).delete(providerId, options);
+	}
+}

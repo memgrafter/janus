@@ -6,8 +6,10 @@
 import { createModels, fauxAssistantMessage, fauxProvider, type Api, type Model, type Models, type MutableModels } from "@earendil-works/pi-ai";
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { ClineCredentialStore } from "./cline-credentials.ts";
+import { CLINE_PASS_PROVIDER_ID, registerClinePass } from "./cline-pass.ts";
 import { registerModelsJson } from "./custom-providers.ts";
-import { FileCredentialStore } from "./credentials.ts";
+import { FileCredentialStore, RoutingCredentialStore } from "./credentials.ts";
 import type { Config } from "./config.ts";
 
 export interface Client {
@@ -24,12 +26,33 @@ export async function createClient(config: Config): Promise<Client> {
 	// bundled loaders. Idempotent; a no-op in source mode where the dynamic import
 	// already works.
 	registerBunOAuthFlows();
+	const authStore = new FileCredentialStore(config.authJsonPath, config.authNoLock);
+	// A single Models collection has one credential store. Route the cline-pass
+	// provider to the Cline CLI's providers.json and everything else to auth.json
+	// so a cline-pass token refresh persists the rotated tokens back to
+	// providers.json (in sync with the Cline CLI) instead of auth.json.
+	const clineStore = new ClineCredentialStore(config.clineProvidersPath, config.authNoLock);
+	const credentials = config.clinePass
+		? new RoutingCredentialStore(authStore, { [CLINE_PASS_PROVIDER_ID]: clineStore })
+		: authStore;
 	const models: MutableModels = config.faux
 		? fauxModels(config)
-		: builtinModels({ credentials: new FileCredentialStore(config.authJsonPath, config.authNoLock) });
+		: builtinModels({ credentials });
 	if (config.modelsJsonPath) {
 		const registered = registerModelsJson(models, config.modelsJsonPath);
 		if (registered.length > 0) console.log(`pi-janus: registered custom providers: ${registered.join(", ")}`);
+	}
+	if (config.clinePass) {
+		// Register the ClinePass provider only when a usable Cline credential is
+		// present in providers.json.
+		const clineModels = createModels({ credentials: clineStore });
+		if (registerClinePass(clineModels, { providersPath: config.clineProvidersPath, apiBaseUrl: config.clineApiBaseUrl })) {
+			const cp = clineModels.getProvider(CLINE_PASS_PROVIDER_ID);
+			if (cp) {
+				models.setProvider(cp);
+				console.log("pi-janus: registered ClinePass provider (Cline OAuth)");
+			}
+		}
 	}
 	return { models, resolveModel: (id) => resolveModel(models, id) };
 }

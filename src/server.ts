@@ -7,6 +7,7 @@
 import type { AssistantMessageEvent, ToolCall, Usage } from "@earendil-works/pi-ai";
 import { assistantMessageToInternal, toPiContext, toPiStreamOptions } from "./bridge.ts";
 import { loadPlaneConfig, type Config } from "./config.ts";
+import { CLINE_PASS_PROVIDER_ID, withClinePassWireModel } from "./cline-pass.ts";
 import { Control, type Dispatcher, type PlaneConfig } from "./control.ts";
 import { createClient, type Client } from "./models.ts";
 import {
@@ -96,11 +97,22 @@ function makeDispatcher(client: Client): Dispatcher {
 	return {
 		async complete(model, req, timeoutMs) {
 			const context = toPiContext(req, model);
-			const options = toPiStreamOptions(req);
+			const options = toPiStreamOptions(req, clinePassOnPayload(model));
 			if (timeoutMs) options.timeoutMs = timeoutMs;
 			return client.models.complete(model, context, options);
 		},
 	};
+}
+
+/**
+ * onPayload that rewrites the wire `model` to the gateway slug for Cline models
+ * (pi-ai sends the short model.id verbatim, but the Cline gateway requires the
+ * full slug, e.g. `cline-pass/glm-5.3` or `z-ai/glm-5.3-flash`). Returns
+ * undefined for non-Cline models.
+ */
+function clinePassOnPayload(model: { provider?: string; id: string; wireModel?: string }): ((payload: unknown, m: any) => unknown | undefined) | undefined {
+	if (model.provider !== CLINE_PASS_PROVIDER_ID) return undefined;
+	return (payload) => withClinePassWireModel(payload, model);
 }
 
 function checkAuth(req: Request, config: Config): boolean {
@@ -220,7 +232,7 @@ async function handleChat(req: Request, client: Client, control: Control, config
 	}
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
-	const options = toPiStreamOptions(internal);
+	const options = toPiStreamOptions(internal, clinePassOnPayload(ctx.model));
 	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream so a
@@ -277,7 +289,7 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 	}
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
-	const options = toPiStreamOptions(internal);
+	const options = toPiStreamOptions(internal, clinePassOnPayload(ctx.model));
 	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream.

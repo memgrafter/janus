@@ -34,6 +34,23 @@ export interface Config {
    * network filesystems.
    */
   authNoLock: boolean;
+  /**
+   * Enable the ClinePass provider (serves the Cline subscription using the
+   * Cline CLI's OAuth credential). Off by default; set JANUS_CLINE_PASS=1 to
+   * enable. The credential is read from clineProvidersPath.
+   */
+  clinePass: boolean;
+  /**
+   * Path to the Cline CLI's providers.json (OAuth credential for ClinePass).
+   * Defaults to ~/.cline/data/settings/providers.json. Set to a non-existent
+   * path to disable ClinePass even when clinePass is enabled.
+   */
+  clineProvidersPath: string;
+  /**
+   * Cline API base URL (production default https://api.cline.bot). Override for
+   * staging/local. The gateway is <base>/api/v1 and refresh is <base>/api/v1/auth/refresh.
+   */
+  clineApiBaseUrl: string;
   /** Allocator tick interval in milliseconds. */
   allocMs: number;
 }
@@ -50,6 +67,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     modelsJsonPath: env["JANUS_MODELS_JSON"] || undefined,
     authJsonPath: env["JANUS_AUTH_JSON"] || join(homedir(), ".pi", "agent", "auth.json"),
     authNoLock: env["JANUS_AUTH_NO_LOCK"] === "1" || env["JANUS_AUTH_NO_LOCK"] === "true",
+    clinePass: env["JANUS_CLINE_PASS"] === "1" || env["JANUS_CLINE_PASS"] === "true",
+    clineProvidersPath: env["JANUS_CLINE_PROVIDERS_JSON"] || join(homedir(), ".cline", "data", "settings", "providers.json"),
+    clineApiBaseUrl: env["JANUS_CLINE_API_BASE_URL"] || "https://api.cline.bot",
     allocMs: intEnv(env["JANUS_ALLOC_MS"], 1000),
   };
 }

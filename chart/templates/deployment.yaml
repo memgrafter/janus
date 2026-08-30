@@ -4,6 +4,9 @@ metadata:
   name: {{ include "janus-inference-control-plane.fullname" . }}
   labels:
     {{- include "janus-inference-control-plane.labels" . | nindent 4 }}
+{{- if and .Values.cline.enabled (not .Values.persistence.enabled) }}
+{{- fail "cline.enabled requires persistence.enabled: the Cline credential file (providers.json) must be writable and persistent so pi-janus can write back rotated refresh tokens" }}
+{{- end }}
 spec:
   # 1 replica: the auth store uses a local advisory lockfile (proper-lockfile),
   # which is unsafe across multiple replicas sharing the PVC (advisory locks are
@@ -23,7 +26,7 @@ spec:
       imagePullSecrets:
         - name: {{ .Values.image.pullSecret }}
       {{- end }}
-      {{- if or .Values.persistence.enabled .Values.auth.existingAuthSecret }}
+      {{- if or .Values.persistence.enabled .Values.auth.existingAuthSecret .Values.cline.enabled }}
       initContainers:
         {{- if .Values.persistence.enabled }}
         - name: fix-permissions
@@ -44,6 +47,23 @@ spec:
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
         {{- end }}
+        {{- if .Values.cline.enabled }}
+        # Seed the Cline credential into the PVC ONLY IF ABSENT. pi-janus refreshes
+        # the token and writes rotated tokens back to providers.json, so after the
+        # first seed the PVC is the source of truth. Re-copying on every start would
+        # clobber a live rotated token with the (stale) Secret snapshot -> double-spend
+        # -> logout. To push a fresh login in, delete the PVC's providers.json (or the
+        # whole PVC) and restart, or kubectl cp over it.
+        - name: seed-cline
+          image: busybox:latest
+          command: ["sh", "-c", "if [ ! -f {{ .Values.persistence.mountPath }}/providers.json ]; then cp /cline/providers.json {{ .Values.persistence.mountPath }}/providers.json; fi && chown 65532:65532 {{ .Values.persistence.mountPath }}/providers.json"]
+          volumeMounts:
+            - name: cline-seed
+              mountPath: /cline
+              readOnly: true
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+        {{- end }}
       {{- end }}
       containers:
         - name: proxy
@@ -59,6 +79,12 @@ spec:
             {{- if .Values.persistence.enabled }}
             - name: JANUS_AUTH_JSON
               value: {{ .Values.persistence.mountPath }}/auth.json
+            {{- end }}
+            {{- if .Values.cline.enabled }}
+            - name: JANUS_CLINE_PASS
+              value: "1"
+            - name: JANUS_CLINE_PROVIDERS_JSON
+              value: {{ .Values.persistence.mountPath }}/providers.json
             {{- end }}
             {{- if .Values.auth.noLock }}
             - name: JANUS_AUTH_NO_LOCK
@@ -105,7 +131,7 @@ spec:
               mountPath: /etc/janus-inference-control-plane
             {{- end }}
           {{- end }}
-      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.auth.existingAuthSecret }}
+      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.auth.existingAuthSecret .Values.cline.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -121,5 +147,10 @@ spec:
         - name: auth-seed
           secret:
             secretName: {{ .Values.auth.existingAuthSecret }}
+        {{- end }}
+        {{- if .Values.cline.enabled }}
+        - name: cline-seed
+          secret:
+            secretName: {{ .Values.cline.existingSecret }}
         {{- end }}
       {{- end }}
