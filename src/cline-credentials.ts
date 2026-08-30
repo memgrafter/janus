@@ -55,6 +55,19 @@ const MAX_DELAY_MS = 2_000;
 /** The provider id under which the Cline CLI stores its OAuth credential. */
 export const CLINE_STORAGE_PROVIDER = "cline";
 
+/**
+ * The Cline gateway signs access tokens as WorkOS JWTs. The Cline CLI stores
+ * and sends them WITH a `workos:` prefix (see formatClineApiKey in the CLI),
+ * but the /auth/refresh endpoint returns the raw JWT. We normalize to the
+ * prefixed form on every read and write so the Bearer token sent to the
+ * gateway is always the prefixed form, regardless of what a refresh returned.
+ * Idempotent: a token that already carries the prefix is returned unchanged.
+ */
+export const WORKOS_TOKEN_PREFIX = "workos:";
+export function withWorkosPrefix(token: string): string {
+	return token.toLowerCase().startsWith(WORKOS_TOKEN_PREFIX) ? token : `${WORKOS_TOKEN_PREFIX}${token}`;
+}
+
 /** Default location of the Cline CLI's providers.json. */
 export function defaultClineProvidersPath(): string {
 	return join(homedir(), ".cline", "data", "settings", "providers.json");
@@ -113,8 +126,9 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
  * Map a Cline `auth` block to a pi-ai OAuthCredential, or undefined when it is
  * not a usable OAuth credential (missing access/refresh token).
  *
- * `accessToken` is stored WITH the `workos:` prefix; we keep it verbatim so the
- * Bearer token sent to the gateway is exactly what the CLI stores.
+ * `accessToken` is normalized to the `workos:`-prefixed form (idempotent) so a
+ * file written by a refresh that returned a raw JWT still yields a usable
+ * Bearer token.
  */
 export function clineAuthToCredential(auth: unknown): OAuthCredential | undefined {
 	if (!auth || typeof auth !== "object") return undefined;
@@ -125,7 +139,7 @@ export function clineAuthToCredential(auth: unknown): OAuthCredential | undefine
 	const expires = typeof a.expiresAt === "number" && Number.isFinite(a.expiresAt) ? a.expiresAt : Date.now();
 	return {
 		type: "oauth",
-		access: accessToken,
+		access: withWorkosPrefix(accessToken),
 		refresh: refreshToken,
 		expires,
 		accountId: typeof a.accountId === "string" ? a.accountId : undefined,
@@ -286,7 +300,7 @@ export class ClineCredentialStore implements CredentialStore {
 				const prevAuth = (settings.auth ?? {}) as Record<string, unknown>;
 				settings.auth = {
 					...prevAuth,
-					accessToken: next.access,
+					accessToken: withWorkosPrefix(next.access),
 					refreshToken: next.refresh,
 					expiresAt: next.expires,
 					...(typeof next.accountId === "string" ? { accountId: next.accountId } : {}),

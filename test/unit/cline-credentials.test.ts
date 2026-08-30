@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ClineCredentialStore, clineAuthToCredential, defaultClineProvidersPath, readClineCredential } from "../../src/cline-credentials.ts";
+import { ClineCredentialStore, clineAuthToCredential, defaultClineProvidersPath, readClineCredential, withWorkosPrefix } from "../../src/cline-credentials.ts";
 import { FileCredentialStore, RoutingCredentialStore } from "../../src/credentials.ts";
 import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
 
@@ -32,8 +32,18 @@ const AUTH = {
 	metadata: { provider: "cline" },
 };
 
+describe("withWorkosPrefix", () => {
+	it("adds the prefix to a raw JWT", () => {
+		expect(withWorkosPrefix("eyJhbGciOiJSUzI1NiJ9.abc")).toBe("workos:eyJhbGciOiJSUzI1NiJ9.abc");
+	});
+
+	it("is idempotent for an already-prefixed token", () => {
+		expect(withWorkosPrefix("workos:abc123")).toBe("workos:abc123");
+	});
+});
+
 describe("clineAuthToCredential", () => {
-	it("maps a cline auth block to an OAuthCredential (workos: prefix kept verbatim)", () => {
+	it("maps a cline auth block to an OAuthCredential (workos: prefix kept)", () => {
 		const cred = clineAuthToCredential(AUTH);
 		expect(cred).toEqual({
 			type: "oauth",
@@ -55,6 +65,13 @@ describe("clineAuthToCredential", () => {
 		const before = Date.now();
 		const cred = clineAuthToCredential({ accessToken: "workos:abc", refreshToken: "r" });
 		expect(cred?.expires).toBeGreaterThanOrEqual(before);
+	});
+
+	it("normalizes a raw (unprefixed) access token to the workos: form", () => {
+		// The gateway's /auth/refresh returns the raw JWT; a file written from a
+		// refresh must still yield a usable (prefixed) Bearer token.
+		const cred = clineAuthToCredential({ accessToken: "eyJhbGciOiJSUzI1NiJ9.raw", refreshToken: "r" });
+		expect(cred?.access).toBe("workos:eyJhbGciOiJSUzI1NiJ9.raw");
 	});
 });
 
@@ -114,6 +131,26 @@ describe("ClineCredentialStore", () => {
 		// Read back through the store.
 		const again = await store.read("cline-pass");
 		expect((again as OAuthCredential).access).toBe("workos:rotated");
+	});
+
+	it("persists a raw (unprefixed) rotated access token in the workos: form", async () => {
+		// Regression: the gateway returns the raw JWT on refresh; the stored file
+		// must always carry the prefixed form the Bearer header expects.
+		const path = tempProvidersJson(AUTH);
+		const store = new ClineCredentialStore(path);
+		const rotated: OAuthCredential = {
+			type: "oauth",
+			access: "eyJhbGciOiJSUzI1NiJ9.rotated-raw",
+			refresh: "refresh-2",
+			expires: Date.now() + 3_600_000,
+			accountId: "acct-1",
+		};
+		await store.modify("cline-pass", async () => rotated);
+
+		const data = JSON.parse(readFileSync(path, "utf-8")) as any;
+		expect(data.providers.cline.settings.auth.accessToken).toBe("workos:eyJhbGciOiJSUzI1NiJ9.rotated-raw");
+		const again = await store.read("cline-pass");
+		expect((again as OAuthCredential).access).toBe("workos:eyJhbGciOiJSUzI1NiJ9.rotated-raw");
 	});
 
 	it("keeps the file at mode 0600 after a write", async () => {

@@ -10,8 +10,9 @@
  *
  * Wire details (verified against the Cline CLI / @cline/llms):
  *   - base URL: https://api.cline.bot/api/v1
- *   - auth:     Authorization: Bearer <accessToken>   (the stored token, which
- *               already carries the `workos:` prefix — sent verbatim)
+ *   - auth:     Authorization: Bearer <accessToken>   (the stored token,
+ *               normalized to the `workos:`-prefixed form — the gateway
+ *               returns the raw JWT on refresh, the CLI stores/sends prefixed)
  *   - model:    the FULL slug, e.g. "cline-pass/glm-5.3"
  *   - refresh:  POST https://api.cline.bot/api/v1/auth/refresh
  *               body { refreshToken, grantType: "refresh_token" }
@@ -25,7 +26,7 @@
 
 import { createProvider, type Api, type Model, type MutableModels, type OAuthCredential, type ProviderStreams } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { readClineCredential } from "./cline-credentials.ts";
+import { readClineCredential, withWorkosPrefix } from "./cline-credentials.ts";
 
 /** Provider id used for ClinePass in pi-janus. */
 export const CLINE_PASS_PROVIDER_ID = "cline-pass";
@@ -98,7 +99,9 @@ export async function refreshClinePassCredential(
 	const expires = typeof data?.expiresAt === "string" ? Date.parse(data.expiresAt) : credential.expires;
 	return {
 		type: "oauth",
-		access: accessToken,
+		// The gateway returns the raw JWT; normalize to the prefixed form the
+		// Bearer header expects (idempotent if it ever returns prefixed).
+		access: withWorkosPrefix(accessToken),
 		refresh: refreshToken,
 		expires: Number.isFinite(expires) ? expires : credential.expires,
 		accountId: typeof credential.accountId === "string" ? credential.accountId : undefined,
