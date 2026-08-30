@@ -135,19 +135,43 @@ describe("toPiStreamOptions thinking token budget", () => {
 		return opts.onPayload!(payload, model);
 	}
 
-	it("adds both budget fields for qwen-chat-template models", () => {
-		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel()) as Record<string, unknown>;
-		expect(out.thinking_token_budget).toBe(1024);
-		expect(out.thinking_budget_tokens).toBe(1024);
-		expect(out.chat_template_kwargs).toEqual({ enable_thinking: true, preserve_thinking: true });
+	it("does not add a budget field unless the upstream model advertises one", () => {
+		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel());
+		expect(out).toBeUndefined();
 	});
 
-	it("combines budget with mapped reasoning_effort", () => {
+	it("adds only the budget field advertised by the upstream model", () => {
+		for (const field of ["thinking_token_budget", "thinking_budget", "thinking_budget_tokens"] as const) {
+			const model = qwenModel({
+				compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, thinkingTokenBudgetField: field },
+			});
+			const out = transformed({ thinkingTokenBudget: 1024 }, model) as Record<string, unknown>;
+			expect(out[field]).toBe(1024);
+			for (const other of ["thinking_token_budget", "thinking_budget", "thinking_budget_tokens"]) {
+				if (other !== field) expect(out[other]).toBeUndefined();
+			}
+		}
+	});
+
+	it("supports the legacy vLLM budget capability flag", () => {
+		const model = qwenModel({
+			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, supportsThinkingTokenBudget: true },
+		});
+		const out = transformed({ thinkingTokenBudget: 1024 }, model) as Record<string, unknown>;
+		expect(out.thinking_token_budget).toBe(1024);
+		expect(out.thinking_budget).toBeUndefined();
+		expect(out.thinking_budget_tokens).toBeUndefined();
+	});
+
+	it("combines a configured budget field with mapped reasoning_effort", () => {
 		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, reasoningEffort: "high", thinkingTokenBudget: 2048 });
-		const out = opts.onPayload!({ model: "m", messages: [] }, qwenModel()) as Record<string, unknown>;
+		const model = qwenModel({
+			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, thinkingTokenBudgetField: "thinking_token_budget" },
+		});
+		const out = opts.onPayload!({ model: "m", messages: [] }, model) as Record<string, unknown>;
 		expect(out.reasoning_effort).toBe("xhigh");
 		expect(out.thinking_token_budget).toBe(2048);
-		expect(out.thinking_budget_tokens).toBe(2048);
+		expect(out.thinking_budget_tokens).toBeUndefined();
 	});
 
 	it("omits onPayload when the client sends no budget and no effort", () => {

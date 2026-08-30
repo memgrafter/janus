@@ -84,7 +84,9 @@ export function toPiStreamOptions(req: InternalRequest): StreamOptions {
  * onPayload that adds backend-specific reasoning controls for qwen-chat-template
  * models: a top-level reasoning_effort (when the client requested effort and the
  * model advertises supportsReasoningEffort) and/or the reasoning token budget
- * (thinking_token_budget for vLLM, thinking_budget_tokens for llama.cpp).
+ * field explicitly advertised by the upstream model. Budget fields are off by
+ * default because unsupported sampling parameters make some servers terminate
+ * the stream with finish_reason=error.
  * Returns undefined (payload unchanged) when nothing applies.
  */
 function addQwenReasoningControls(
@@ -106,10 +108,11 @@ function addQwenReasoningControls(
 		}
 	}
 	if (budget !== undefined) {
-		// vLLM reads thinking_token_budget; llama.cpp reads thinking_budget_tokens.
-		out.thinking_token_budget = budget;
-		out.thinking_budget_tokens = budget;
-		changed = true;
+		const field = m.compat.thinkingTokenBudgetField ?? (m.compat.supportsThinkingTokenBudget ? "thinking_token_budget" : undefined);
+		if (field) {
+			out[field] = budget;
+			changed = true;
+		}
 	}
 	return changed ? out : undefined;
 }
