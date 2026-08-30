@@ -98,6 +98,27 @@ describe("refreshClinePassCredential", () => {
 		}
 	});
 
+	it("normalizes a raw (unprefixed) access token returned by the gateway", async () => {
+		// Regression: /auth/refresh returns the raw JWT (no workos: prefix), but the
+		// Bearer header the gateway expects is the prefixed form.
+		const realFetch = globalThis.fetch;
+		globalThis.fetch = (async () =>
+			new Response(
+				JSON.stringify({
+					success: true,
+					data: { accessToken: "eyJhbGciOiJSUzI1NiJ9.raw", refreshToken: "refresh-2", tokenType: "Bearer", expiresAt: new Date(Date.now() + 3_600_000).toISOString(), userInfo: {} },
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			)) as unknown as typeof fetch;
+		try {
+			const cred: OAuthCredential = { type: "oauth", access: "workos:abc123", refresh: "refresh-1", expires: Date.now() + 60_000 };
+			const out = await refreshClinePassCredential(cred);
+			expect(out.access).toBe("workos:eyJhbGciOiJSUzI1NiJ9.raw");
+		} finally {
+			globalThis.fetch = realFetch;
+		}
+	});
+
 	it("throws on a non-2xx response", async () => {
 		const realFetch = globalThis.fetch;
 		globalThis.fetch = (async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })) as unknown as typeof fetch;
