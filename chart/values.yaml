@@ -30,6 +30,16 @@ auth:
   noLock: false              # JANUS_AUTH_NO_LOCK: skip cross-process lock (single-process deployments)             # k8s Secret name
   tokenKey: token                # key within the secret
 
+# ClinePass (Cline subscription) provider. Serves cline-pass/* models using the
+# Cline CLI's OAuth credential (providers.json). Requires persistence.enabled
+# (the credential file must be writable so pi-janus can persist rotated refresh
+# tokens). The Secret (key "providers.json") is seeded into the PVC on first
+# start ONLY IF ABSENT — afterwards the PVC is the source of truth; to push a
+# fresh login, delete the PVC's providers.json (or the PVC) and restart.
+cline:
+  enabled: false
+  existingSecret: ""   # Secret with the Cline CLI's providers.json (key "providers.json")
+
 # Provider API keys -> env (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY).
 # Built-in providers are auto-offered for each key present. Each entry:
 #   - name: <ENV_VAR>

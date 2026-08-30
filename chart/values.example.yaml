@@ -10,6 +10,10 @@
 #     --from-literal=openai=$OPENAI_API_KEY \
 #     --from-literal=deepseek=$DEEPSEEK_API_KEY \
 #     --from-literal=openrouter=$OPENROUTER_API_KEY
+#   # ClinePass: the Cline CLI's credential file (from a machine where you ran
+#   # `cline auth cline-pass`):
+#   kubectl -n <ns> create secret generic janus-inference-control-plane-cline \
+#     --from-file=providers.json=$HOME/.cline/data/settings/providers.json
 #
 # Install:
 #   helm install janus-inference-control-plane ./chart/ \
@@ -30,12 +34,18 @@ persistence:
   enabled: true
   storageClass: longhorn
   accessMode: ReadWriteOnce
-  size: 256Mi   # only holds auth.json (~KB) + lockfile
+  size: 256Mi   # holds auth.json + providers.json (~KB each) + lockfiles
   mountPath: /data
 
 auth:
   existingSecret: janus-inference-control-plane-token
   tokenKey: token
+
+# ClinePass: enable to serve cline-pass/* models from the Cline credential
+# secret above. Seeded into the PVC on first start only if absent.
+cline:
+  enabled: true
+  existingSecret: janus-inference-control-plane-cline
 
 apiKeys:
   - name: OPENAI_API_KEY
