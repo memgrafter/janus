@@ -30,6 +30,15 @@ bun test test/live                      # runs the BUILT BINARY as a local proce
 
 Run the server: `./dist/pi-janus` (listens on `http://127.0.0.1:8787`), or `bun run src/index.ts`.
 
+## Builds
+
+- `scripts/build.sh` is the only binary build entrypoint. Run `scripts/test.sh` before release.
+- Container releases use the repository `Dockerfile`. It runs `bun install`, overlays `vendor/pi-ai`, then calls `scripts/build.sh --skip-deps`.
+- Refresh `vendor/pi-ai` with `scripts/vendor-pi-ai.sh` only when intentionally updating pi-ai. Do not bypass the overlay with a host-built binary.
+- Build k3s images on native AMD64. If Bun fails under QEMU on an ARM host, use a native AMD64 Docker host and transfer the finished image to a registry-capable host for pushing.
+- Push both an immutable tag and `latest`. For a dirty tree, include a content hash in the immutable tag. Pin Helm values to the immutable tag.
+- After deployment, verify `/health` and run a real pi agent through existing providers and the new provider. A curl-only smoke test is insufficient.
+
 ## Architecture
 
 Two tiers. The **core** is a three-layer separation (mandated so new wire formats slot in without a rewrite): `wire-format -> pi-ai mapping -> transport`. The **control plane** sits above the core and is the single place that decides admit / queue / reject and which quota + deadline applies. `server.ts` chains them per request.
