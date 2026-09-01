@@ -8,6 +8,10 @@ A local, OpenAI-compatible inference proxy built on [`@earendil-works/pi-ai`](ht
 - `GET /v1/models` — lists available models (auth-configured providers).
 - `GET /health` — liveness.
 
+## CORS
+
+All responses carry `Access-Control-Allow-Origin: *` and `OPTIONS` preflights are answered (204, allowing `authorization`/`content-type`), so browser clients (e.g. the sitegeist extension) can call the proxy directly. Janus is a LAN proxy authenticated by bearer token, so a static `*` is safe — the token, not the origin, is the credential.
+
 ## Quick start
 
 ```bash

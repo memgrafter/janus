@@ -98,3 +98,62 @@ describe("integration (in-process, faux provider)", () => {
 		expect(res.status).toBe(404);
 	});
 });
+
+describe("CORS (browser clients)", () => {
+	it("OPTIONS preflight returns 204 with allow headers incl. authorization", async () => {
+		const res = await fetch(`${base}/chat/completions`, {
+			method: "OPTIONS",
+			headers: {
+				origin: "http://example.com",
+				"access-control-request-method": "POST",
+				"access-control-request-headers": "authorization, content-type",
+			},
+		});
+		expect(res.status).toBe(204);
+		expect(res.headers.get("access-control-allow-origin")).toBe("*");
+		expect(res.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
+		expect(res.headers.get("access-control-allow-headers")?.toLowerCase()).toContain("authorization");
+		expect(res.headers.get("access-control-max-age")).toBe("86400");
+	});
+
+	it("OPTIONS preflight works without auth (preflight carries no bearer token)", async () => {
+		const res = await fetch(`${base}/models`, {
+			method: "OPTIONS",
+			headers: { origin: "http://example.com", "access-control-request-method": "GET" },
+		});
+		expect(res.status).toBe(204);
+		expect(res.headers.get("access-control-allow-origin")).toBe("*");
+	});
+
+	it("GET /v1/models response carries CORS headers", async () => {
+		const res = await fetch(`${base}/models`, { headers: { origin: "http://example.com" } });
+		expect(res.status).toBe(200);
+		expect(res.headers.get("access-control-allow-origin")).toBe("*");
+	});
+
+	it("SSE stream response carries CORS headers", async () => {
+		const res = await fetch(`${base}/chat/completions`, {
+			method: "POST",
+			headers: { "content-type": "application/json", origin: "http://example.com" },
+			body: JSON.stringify({ model: "faux/faux", messages: [{ role: "user", content: "hi" }], stream: true }),
+		});
+		expect(res.status).toBe(200);
+		expect(res.headers.get("access-control-allow-origin")).toBe("*");
+		await res.body?.cancel();
+	});
+
+	it("401 unauthorized response carries CORS headers (browser can read the error)", async () => {
+		// The shared server runs without JANUS_TOKEN, so spin up a token-configured
+		// one to exercise the auth-failure path.
+		const cfg = loadConfig({ JANUS_FAUX: "1", JANUS_TOKEN: "secret" });
+		const h = await createServer(cfg, 0);
+		try {
+			const res = await fetch(`http://127.0.0.1:${h.port}/v1/models`, { headers: { origin: "http://example.com" } });
+			expect(res.status).toBe(401);
+			expect(res.headers.get("access-control-allow-origin")).toBe("*");
+		}
+		finally {
+			await h.close();
+		}
+	});
+});
