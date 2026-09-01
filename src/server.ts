@@ -186,7 +186,17 @@ function makeKeepAlive(
 
 async function handleModels(client: Client): Promise<Response> {
 	const available = await client.models.getAvailable();
-	const list = modelListToOpenAI(available.map((m) => ({ id: `${m.provider}/${m.id}`, provider: m.provider })));
+	const list = modelListToOpenAI(
+		available.map((m) => ({
+			id: `${m.provider}/${m.id}`,
+			provider: m.provider,
+			contextWindow: m.contextWindow,
+			maxTokens: m.maxTokens,
+			reasoning: m.reasoning,
+			input: m.input,
+			cost: m.cost,
+		})),
+	);
 	return jsonResponse(list, 200);
 }
 

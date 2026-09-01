@@ -194,10 +194,40 @@ function safeParseObject(s: unknown): Record<string, unknown> | undefined {
 // Response builders
 // ---------------------------------------------------------------------------
 
-export function modelListToOpenAI(entries: { id: string; provider: string }[]): Record<string, unknown> {
+export interface ModelListEntry {
+	id: string;
+	provider: string;
+	/** Optional metadata; emitted as extra fields for clients that use them. */
+	contextWindow?: number;
+	maxTokens?: number;
+	reasoning?: boolean;
+	input?: ("text" | "image")[];
+	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+}
+
+/**
+ * OpenAI model-list response. Beyond the canonical fields (id/object/created/
+ * owned_by) it carries optional metadata (context_window, max_tokens, reasoning,
+ * input, cost) so browser clients can render real limits instead of guessing.
+ * OpenAI-compatible clients ignore unknown fields, so this stays backward
+ * compatible.
+ */
+export function modelListToOpenAI(entries: ModelListEntry[]): Record<string, unknown> {
 	return {
 		object: "list",
-		data: entries.map((e) => ({ id: e.id, object: "model", created: 0, owned_by: e.provider })),
+		data: entries.map((e) => ({
+			id: e.id,
+			object: "model",
+			created: 0,
+			owned_by: e.provider,
+			...(e.contextWindow !== undefined ? { context_window: e.contextWindow } : {}),
+			...(e.maxTokens !== undefined ? { max_tokens: e.maxTokens } : {}),
+			...(e.reasoning !== undefined ? { reasoning: e.reasoning } : {}),
+			...(e.input !== undefined ? { input: e.input } : {}),
+			...(e.cost !== undefined
+				? { cost: { input: e.cost.input, output: e.cost.output, cache_read: e.cost.cacheRead, cache_write: e.cost.cacheWrite } }
+				: {}),
+		})),
 	};
 }
 
