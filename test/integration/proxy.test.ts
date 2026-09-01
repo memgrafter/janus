@@ -32,6 +32,17 @@ describe("integration (in-process, faux provider)", () => {
 		expect(body.data.some((m: any) => m.id === "faux/faux")).toBe(true);
 	});
 
+	it("GET /v1/models carries model metadata (context window, max tokens, reasoning, input, cost)", async () => {
+		const res = await fetch(`${base}/models`);
+		const body = (await res.json()) as any;
+		const faux = body.data.find((m: any) => m.id === "faux/faux");
+		expect(faux.context_window).toBe(8192);
+		expect(faux.max_tokens).toBe(2048);
+		expect(faux.reasoning).toBe(false);
+		expect(faux.input).toEqual(["text", "image"]);
+		expect(faux.cost).toEqual({ input: 0, output: 0, cache_read: 0, cache_write: 0 });
+	});
+
 	it("POST /v1/chat/completions (non-stream) returns a completion", async () => {
 		const res = await fetch(`${base}/chat/completions`, {
 			method: "POST",
