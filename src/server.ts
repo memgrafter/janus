@@ -20,7 +20,7 @@ import {
 	type StopReason,
 } from "./openai.ts";
 import { parseResponsesRequest, responseToOpenAI, ResponsesChunker } from "./responses.ts";
-import { jsonResponse, sseData, sseDone, sseHeaders } from "./sse.ts";
+import { corsHeaders, jsonResponse, sseData, sseDone, sseHeaders } from "./sse.ts";
 import { InMemoryTelemetry } from "./telemetry.ts";
 
 export interface ServerHandle {
@@ -51,10 +51,29 @@ export async function createServer(
 		// keep-alive pings in handleChat/handleResponses cover the >255s tail.
 		idleTimeout: 255,
 		async fetch(req) {
+			const url = new URL(req.url);
+			const path = url.pathname;
+			// CORS preflight: answered before auth so browsers can preflight
+			// cross-origin requests to the LAN proxy (the token is still required
+			// on the actual request). Authorization is in the requested headers
+			// because clients (e.g. the OpenAI SDK) send it on every request.
+			if (req.method === "OPTIONS") {
+				const requested = (req.headers.get("access-control-request-headers") ?? "").toLowerCase();
+				const allowHeaders = requested.includes("authorization")
+					? "authorization, content-type"
+					: requested || "content-type";
+				return new Response(null, {
+					status: 204,
+					headers: {
+						...corsHeaders(),
+						"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+						"Access-Control-Allow-Headers": allowHeaders,
+						"Access-Control-Max-Age": "86400",
+					},
+				});
+			}
 			try {
-				const url = new URL(req.url);
-				const path = url.pathname;
-				if (path === "/health") return new Response("ok", { status: 200 });
+				if (path === "/health") return new Response("ok", { status: 200, headers: corsHeaders() });
 				if (!checkAuth(req, config)) return jsonResponse({ error: { message: "unauthorized", type: "auth_error", code: null } }, 401);
 				if (path === "/v1/models" && req.method === "GET") return await handleModels(client);
 				if (path === "/v1/categories" && req.method === "GET") return handleCategories(control, client);
@@ -69,6 +88,9 @@ export async function createServer(
 				if (e instanceof OpenAIError) return jsonResponse(e.toBody(), e.status);
 				return jsonResponse({ error: { message: e instanceof Error ? e.message : String(e), type: "server_error", code: null } }, 500);
 			}
+			// Fallback for errors thrown outside the try (e.g. URL parse): keep CORS
+			// headers so browsers can surface the failure.
+			return new Response("bad request", { status: 400, headers: corsHeaders() });
 		},
 	});
 
