@@ -174,6 +174,27 @@ describe("integration (ClinePass via local mock gateway)", () => {
 		expect(captured.model).toBe("cline-pass/kimi-k3");
 	});
 
+	it("still rewrites the wire model to the full slug when reasoning_effort is present", async () => {
+		// Regression: the qwen onPayload hook returns undefined for non-qwen
+		// models, and the composition must fall back to the original payload so
+		// the ClinePass wire-model rewrite still runs. Without that, the gateway
+		// receives the bare id (glm-5.3) and the stream ends in finish_reason=error.
+		const res = await fetch(`${base}/chat/completions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				model: "cline-pass/glm-5.3",
+				messages: [{ role: "user", content: "hi" }],
+				reasoning_effort: "medium",
+			}),
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as any;
+		expect(body.choices[0].message.content).toBe("clinepass mock ok");
+		// The gateway must still see the full slug, not the bare id.
+		expect(captured.model).toBe("cline-pass/glm-5.3");
+	});
+
 	it("refreshes a near-expiry token and persists the rotated tokens back to providers.json", async () => {
 		// Token within the 5-minute refresh buffer -> pi-ai refreshes before the request.
 		writeClineProviders(INITIAL_TOKEN, "refresh-1", Date.now() + 60_000);

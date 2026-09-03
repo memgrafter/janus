@@ -79,7 +79,15 @@ export function toPiStreamOptions(req: InternalRequest, extraOnPayload?: (payloa
 	}
 	if (extraOnPayload) {
 		const qwen = opts.onPayload;
-		opts.onPayload = (payload, model) => extraOnPayload(qwen ? qwen(payload, model) : payload, model);
+		opts.onPayload = (payload, model) => {
+			// A hook returning undefined means "no change" (pi-ai onPayload
+			// convention), so fall back to the original payload rather than
+			// forwarding undefined to the next hook. Otherwise a no-op qwen
+			// hook would starve the downstream wire-model rewrite (e.g. the
+			// ClinePass slug) whenever reasoning_effort is present.
+			const next = qwen ? qwen(payload, model) : undefined;
+			return extraOnPayload(next ?? payload, model);
+		};
 	}
 	return opts;
 }
