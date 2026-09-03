@@ -8,6 +8,8 @@ import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ClineCredentialStore } from "./cline-credentials.ts";
 import { CLINE_PASS_PROVIDER_ID, registerClinePass } from "./cline-pass.ts";
+import { getApiProvider } from "@earendil-works/pi-ai/compat";
+import { registerZcode, zcodeDeps } from "./zcode.ts";
 import { registerModelsJson } from "./custom-providers.ts";
 import { FileCredentialStore, RoutingCredentialStore } from "./credentials.ts";
 import type { Config } from "./config.ts";
@@ -53,6 +55,20 @@ export async function createClient(config: Config): Promise<Client> {
 				console.log("pi-janus: registered ClinePass provider (Cline OAuth)");
 			}
 		}
+	}
+	if (config.zcode) {
+		// ZCode (Z.AI GLM) providers: credentials live in zcode.conf (hot-read).
+		// Both providers are always registered; each is available (listed by
+		// /v1/models) only while its credential is present in the conf, so
+		// adding/rotating credentials needs no restart. The Coding Plan provider
+		// wraps pi-ai's anthropic-messages impl with the ZCode fingerprint
+		// headers + captcha-aware fetch; the API-key provider uses the stock impl
+		// with x-api-key auth.
+		const baseApi = getApiProvider("anthropic-messages");
+		if (!baseApi) throw new Error('pi-ai: no API implementation registered for "anthropic-messages"');
+		const deps = zcodeDeps(config.zcodeConfPath);
+		const registered = registerZcode(models, baseApi, deps);
+		console.log(`pi-janus: registered ZCode providers: ${registered.join(", ")} (zcode.conf: ${config.zcodeConfPath})`);
 	}
 	return { models, resolveModel: (id) => resolveModel(models, id) };
 }

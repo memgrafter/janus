@@ -4,7 +4,7 @@
  * (openai wire-format -> bridge pi-ai mapping -> sse transport).
  */
 
-import type { AssistantMessageEvent, ToolCall, Usage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent, ToolCall, Usage } from "@earendil-works/pi-ai";
 import { assistantMessageToInternal, toPiContext, toPiStreamOptions } from "./bridge.ts";
 import { loadPlaneConfig, type Config } from "./config.ts";
 import { CLINE_PASS_PROVIDER_ID, withClinePassWireModel } from "./cline-pass.ts";
@@ -22,7 +22,11 @@ import {
 import { parseResponsesRequest, responseToOpenAI, ResponsesChunker } from "./responses.ts";
 import { corsHeaders, jsonResponse, sseData, sseDone, sseHeaders } from "./sse.ts";
 import { InMemoryTelemetry } from "./telemetry.ts";
-
+import { createHash } from "node:crypto";
+import { captchaManager, isCaptchaErrorBody } from "./zcode-captcha.ts";
+import { loadZcodeConf } from "./zcode-conf.ts";
+import { captchaPageUrl, isZcodeProvider, setZcodeCaptchaUrl, zcodeCaptchaUrl, zcodeErrorMessage, zcodeOnPayload } from "./zcode.ts";
+import ZCODE_CAPTCHA_PAGE from "./zcode-captcha-page.txt" with { type: "text" };
 export interface ServerHandle {
 	port: number;
 	/** The control plane (exposed for tests / introspection). */
@@ -74,6 +78,14 @@ export async function createServer(
 			}
 			try {
 				if (path === "/health") return new Response("ok", { status: 200, headers: corsHeaders() });
+				// The captcha solve page must be reachable from a bare browser (no
+				// bearer token), so it is answered before auth — like /health.
+				if (path === "/zcode/captcha.html" && req.method === "GET") {
+					return new Response(ZCODE_CAPTCHA_PAGE, { status: 200, headers: { "content-type": "text/html; charset=utf-8", ...corsHeaders() } });
+				}
+				if (path === "/v1/zcode/captcha/config" && req.method === "GET") return handleZcodeCaptchaConfig(config);
+				if (path === "/v1/zcode/captcha/submit" && req.method === "POST") return await handleZcodeCaptchaSubmit(req, config);
+				if (path === "/v1/zcode/captcha/poll" && req.method === "GET") return await handleZcodeCaptchaPoll(req, config);
 				if (!checkAuth(req, config)) return jsonResponse({ error: { message: "unauthorized", type: "auth_error", code: null } }, 401);
 				if (path === "/v1/models" && req.method === "GET") return await handleModels(client);
 				if (path === "/v1/categories" && req.method === "GET") return handleCategories(control, client);
@@ -86,13 +98,22 @@ export async function createServer(
 				return jsonResponse({ error: { message: `not found: ${path}`, type: "invalid_request_error", code: null } }, 404);
 			} catch (e) {
 				if (e instanceof OpenAIError) return jsonResponse(e.toBody(), e.status);
-				return jsonResponse({ error: { message: e instanceof Error ? e.message : String(e), type: "server_error", code: null } }, 500);
+				const message = e instanceof Error ? e.message : String(e);
+				return jsonResponse(withZcodeHint({ error: { message, type: "server_error", code: null } }, message, undefined), 500);
 			}
 			// Fallback for errors thrown outside the try (e.g. URL parse): keep CORS
 			// headers so browsers can surface the failure.
 			return new Response("bad request", { status: 400, headers: corsHeaders() });
 		},
 	});
+
+	// Install the live captcha page URL (actual bound port + optional public
+	// origin) so ZCode 3007 errors and the auto-open browser point at the real
+	// server — including port:0 test servers and k3s deployments.
+	if (config.zcode) {
+		const origin = config.publicUrl ?? `http://${config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host}:${server.port ?? listenPort}`;
+		setZcodeCaptchaUrl(() => captchaPageUrl(origin));
+	}
 
 	// Allocator: drives queued (event) work on a timer.
 	const allocTimer = setInterval(() => {
@@ -137,9 +158,127 @@ function clinePassOnPayload(model: { provider?: string; id: string; wireModel?: 
 	return (payload) => withClinePassWireModel(payload, model);
 }
 
+/**
+ * Per-model onPayload: ClinePass wire-model rewrite and/or the ZCode Coding
+ * Plan wire-model + system-prompt injection. Both are no-ops for other
+ * providers, so this is safe to pass for every request.
+ */
+function combinedOnPayload(model: { provider?: string; id: string; wireModel?: string }): (payload: unknown, m: { id: string }) => unknown | undefined {
+	const cline = clinePassOnPayload(model);
+	const zcode = zcodeOnPayload(model);
+	if (!cline && !zcode) return (payload) => payload;
+	return (payload, m) => {
+		let next = payload;
+		if (cline) next = cline(next, m as any) ?? next;
+		if (zcode) next = zcode(next, m) ?? next;
+		return next;
+	};
+}
+
 function checkAuth(req: Request, config: Config): boolean {
 	if (!config.token) return true;
 	return (req.headers.get("authorization") ?? "") === `Bearer ${config.token}`;
+}
+
+/**
+ * Enrich a ZCode upstream error body: map it through the body-code taxonomy
+ * (3007 captcha / 401 re-auth / 1113 quota / 3010 concurrency) and, for a
+ * captcha challenge, attach the live captcha page URL so k3s/remote users get
+ * a clickable link. Local users also get the page auto-opened by the
+ * captcha-aware fetch.
+ */
+function withZcodeHint(body: Record<string, unknown>, message: string, provider: string | undefined): Record<string, unknown> {
+	if (!isZcodeProvider(provider)) return body;
+	const url = zcodeCaptchaUrl();
+	const err = body.error as Record<string, unknown>;
+	const mapped = zcodeErrorMessage(message, url);
+	const extra: Record<string, unknown> = {};
+	if (isCaptchaErrorBody(message)) extra.captcha_url = url;
+	return { ...body, error: { ...err, message: mapped, ...extra } };
+}
+
+/** Map a ZCode upstream error to an HTTP status (502 for upstream failures). */
+function zcodeStatus(message: string): number {
+	if (message.trimStart().startsWith("401")) return 401;
+	if (message.includes("code 3010") || message.includes('"code":3010')) return 429;
+	return 502;
+}
+
+type PiErrorEvent = Extract<AssistantMessageEvent, { type: "error" }>;
+
+/** Map a pi-ai error event to a chat-completions error chunk. */
+function chatErrorChunk(chunker: StreamChunker, event: PiErrorEvent, provider: string | undefined): Record<string, unknown> {
+	const message = event.error?.errorMessage ?? "upstream error";
+	const reason = event.reason === "aborted" ? "aborted" : "error";
+	return {
+		...chunker.done(reason, { input: 0, output: 0, totalTokens: 0, cacheRead: 0 }),
+		error: withZcodeHint({ error: { message } }, message, provider).error,
+	};
+}
+
+/** Map a pi-ai error event to a responses-API failed chunk. */
+function responsesErrorChunk(event: PiErrorEvent, provider: string | undefined): Record<string, unknown>[] {
+	const message = event.error?.errorMessage ?? "upstream error";
+	return [{ type: "response.failed", response: { status: "failed", error: withZcodeHint({ error: { message } }, message, provider).error } }];
+}
+
+function handleZcodeCaptchaConfig(config: Config): Response {
+	const conf = loadZcodeConf(config.zcodeConfPath);
+	return jsonResponse(
+		{
+			enabled: !!conf,
+			sceneId: conf?.captchaSceneId,
+			prefix: conf?.captchaPrefix,
+			region: conf?.captchaRegion,
+		},
+		200,
+	);
+}
+
+async function handleZcodeCaptchaSubmit(req: Request, config: Config): Promise<Response> {
+	const body = (await req.json().catch(() => null)) as { verifyParam?: unknown } | null;
+	const param = typeof body?.verifyParam === "string" ? body.verifyParam : "";
+	if (!param) return jsonResponse({ error: "verifyParam is required" }, 400);
+	// Log the param structure (keys + short prefixes, redacted) to understand
+	// single-use / duplicate-submission behavior.
+	let desc = "non-json";
+	try {
+		let j: unknown;
+		try {
+			j = JSON.parse(param);
+		} catch {
+			j = JSON.parse(Buffer.from(param, "base64").toString("utf8"));
+		}
+		const obj = j as Record<string, unknown>;
+		const h = (v: unknown) =>
+			typeof v === "string" && v.length > 16
+				? "sha1=" + createHash("sha1").update(v).digest("hex").slice(0, 12) + " len=" + v.length
+				: String(v);
+		desc = Object.entries(obj)
+			.map(([k, v]) => `${k}=${h(v)}`)
+			.join(" ");
+	} catch {
+		desc = param.slice(0, 40) + "…";
+	}
+	console.log("[zcode] captcha submit: " + desc);
+	captchaManager(loadZcodeConf(config.zcodeConfPath)).submit(param);
+	return jsonResponse({ success: true }, 200);
+}
+
+/**
+ * Keeper-tab long-poll: the captcha page (kept open in the user's browser)
+ * polls this; it blocks until a request needs a fresh verifyParam (or the
+ * wait elapses), then the page runs a fresh traceless verification and
+ * POSTs the param. This is the k3s flow — one always-open tab, no click per
+ * request — and also the local flow (the auto-opened tab keeps serving).
+ */
+async function handleZcodeCaptchaPoll(req: Request, config: Config): Promise<Response> {
+	const url = new URL(req.url);
+	const wait = Math.min(Math.max(Number(url.searchParams.get("wait") ?? "25000") || 25000, 1000), 55000);
+	const manager = captchaManager(loadZcodeConf(config.zcodeConfPath));
+	manager.noteKeeperPoll();
+	const challenge = await manager.waitForChallenge(wait);
+	return jsonResponse({ challenge }, 200);
 }
 
 /** Route a request to a project via the X-Project header or body.metadata.project. */
@@ -264,7 +403,7 @@ async function handleChat(req: Request, client: Client, control: Control, config
 	}
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
-	const options = toPiStreamOptions(internal, clinePassOnPayload(ctx.model));
+	const options = toPiStreamOptions(internal, combinedOnPayload(ctx.model));
 	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream so a
@@ -275,6 +414,10 @@ async function handleChat(req: Request, client: Client, control: Control, config
 
 	if (!internal.stream) {
 		const msg = await client.models.complete(ctx.model, context, options);
+		if (msg.stopReason === "error" && isZcodeProvider(ctx.model.provider)) {
+			const message = msg.errorMessage ?? "upstream error";
+			return jsonResponse(withZcodeHint({ error: { message, type: "upstream_error", code: null } }, message, ctx.model.provider), zcodeStatus(message));
+		}
 		control.ledger.record(ctx.quotaBucketId, msg.usage);
 		return jsonResponse(completionToOpenAI(assistantMessageToInternal(msg)), 200);
 	}
@@ -291,15 +434,20 @@ async function handleChat(req: Request, client: Client, control: Control, config
 			const keepAlive = makeKeepAlive(controller, encoder);
 			push(chunker.start());
 			keepAlive.start();
+			const isZcode = isZcodeProvider(ctx.model.provider);
 			try {
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
-					const out = mapEventToChunk(chunker, event);
+					const out = event.type === "error" && isZcode
+						? chatErrorChunk(chunker, event, ctx.model.provider)
+						: mapEventToChunk(chunker, event);
 					if (out) { push(out); keepAlive.stop(); }
 				}
 			} catch (e) {
-				push({ error: { message: e instanceof Error ? e.message : String(e) } });
+				const message = e instanceof Error ? e.message : String(e);
+				if (isZcode) push(chatErrorChunk(chunker, { type: "error", reason: "error", error: { errorMessage: message } as AssistantMessage }, ctx.model.provider));
+				else push({ error: { message } });
 			} finally {
 				keepAlive.stop();
 				try { controller.enqueue(encoder.encode(sseDone())); controller.close(); } catch { /* client gone */ }
@@ -321,7 +469,7 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 	}
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
-	const options = toPiStreamOptions(internal, clinePassOnPayload(ctx.model));
+	const options = toPiStreamOptions(internal, combinedOnPayload(ctx.model));
 	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream.
@@ -329,6 +477,10 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 
 	if (!internal.stream) {
 		const msg = await client.models.complete(ctx.model, context, options);
+		if (msg.stopReason === "error" && isZcodeProvider(ctx.model.provider)) {
+			const message = msg.errorMessage ?? "upstream error";
+			return jsonResponse(withZcodeHint({ error: { message, type: "upstream_error", code: null } }, message, ctx.model.provider), zcodeStatus(message));
+		}
 		control.ledger.record(ctx.quotaBucketId, msg.usage);
 		return jsonResponse(responseToOpenAI(assistantMessageToInternal(msg), ctx.model.id), 200);
 	}
@@ -344,15 +496,24 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 			for (const e of chunker.start()) push(e);
 			keepAlive.start();
 			let pushed = false;
+			const isZcode = isZcodeProvider(ctx.model.provider);
 			try {
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
-					for (const e of mapResponsesEvent(chunker, event)) { push(e); pushed = true; }
+					const out = event.type === "error" && isZcode
+						? responsesErrorChunk(event, ctx.model.provider)
+						: mapResponsesEvent(chunker, event);
+					for (const e of out) { push(e); pushed = true; }
 					if (pushed) keepAlive.stop();
 				}
 			} catch (e) {
-				push({ type: "response.failed", response: { status: "failed", error: { message: e instanceof Error ? e.message : String(e) } } });
+				const message = e instanceof Error ? e.message : String(e);
+				const failed: Record<string, unknown> = isZcode
+					? responsesErrorChunk({ type: "error", reason: "error", error: { errorMessage: message } as AssistantMessage }, ctx.model.provider)[0]
+					: { type: "response.failed", response: { status: "failed", error: { message } } };
+				push(failed);
+				pushed = true;
 			} finally {
 				keepAlive.stop();
 				try { controller.close(); } catch { /* client gone */ }
