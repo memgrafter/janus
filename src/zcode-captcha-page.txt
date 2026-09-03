@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pi-janus — ZCode Verification</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #09090b 0%, #111115 50%, #1e1b4b 100%);
+      min-height: 100vh; display: flex; justify-content: center; align-items: center;
+      color: #f4f4f5;
+    }
+    .card {
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px; padding: 32px; max-width: 420px; width: 90%;
+      text-align: center; box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+    }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    p.sub { color: #a1a1aa; font-size: 14px; margin-bottom: 24px; }
+    #captcha-div { min-height: 100px; }
+    #captcha-trigger-btn {
+      background: #6366f1; color: white; border: none; border-radius: 8px;
+      padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    #captcha-trigger-btn:hover { background: #4f46e5; }
+    .status { margin-top: 16px; font-size: 13px; color: #10b981; min-height: 18px; }
+    .hidden { display: none; }
+    .spinner {
+      display: inline-block; width: 14px; height: 14px; border: 2px solid #6366f1;
+      border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 id="title">Security Verification</h1>
+    <p class="sub" id="subtitle">Complete the captcha puzzle to continue ZCode requests.</p>
+    <div id="captcha-div"></div>
+    <button id="captcha-trigger-btn" class="hidden">Start verification</button>
+    <div class="status" id="status"></div>
+  </div>
+  <script src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"></script>
+  <script>
+    const statusEl = document.getElementById("status");
+    const triggerBtn = document.getElementById("captcha-trigger-btn");
+    const setBusy = (msg) => { statusEl.innerHTML = '<span class="spinner"></span> ' + msg; };
+    const setDone = (msg) => { statusEl.textContent = msg; };
+    let captchaInstance = null;
+    let verifying = false;
+
+    async function submitParam(verifyParam) {
+      const res = await fetch("/v1/zcode/captcha/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verifyParam }),
+      });
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || `HTTP ${res.status}`);
+    }
+
+    // Run the traceless verification for a FRESH page load (initial verify).
+    // The keeper re-verify path is a full location.reload() (see keeperLoop),
+    // which re-runs this same fresh-load verify — the path that produces an
+    // accepted param. The destroy below is a no-op on a fresh load but guards
+    // against a stale instance if this is ever called twice in one load.
+    async function runVerification(config) {
+      if (verifying) return;
+      verifying = true;
+      try {
+        // Destroy any prior instance so the SDK produces a FRESH param
+        // (the param is single-use; reusing one triggers a 3007).
+        if (captchaInstance && typeof captchaInstance.destroy === "function") {
+          try { captchaInstance.destroy(); } catch (e) { /* ignore */ }
+        }
+        captchaInstance = null;
+        document.getElementById("captcha-div").innerHTML = "";
+        setBusy("Running silent verification\u2026");
+        window.initAliyunCaptcha({
+          SceneId: config.sceneId,
+          mode: "popup",
+          region: config.region,
+          prefix: config.prefix,
+          element: "#captcha-div",
+          button: "#captcha-trigger-btn",
+          captchaLogoImg: "",
+          showErrorTip: false,
+          getInstance: (instance) => {
+            captchaInstance = instance;
+            if (typeof instance.startTracelessVerification === "function") {
+              instance.startTracelessVerification();
+            } else if (typeof instance.show === "function") {
+              instance.show();
+            } else {
+              triggerBtn.classList.remove("hidden");
+            }
+          },
+          success: async (verifyParam) => {
+            // A fresh verify landed — reset the circuit breaker.
+            try { sessionStorage.removeItem(SS.fails); } catch { /* ignore */ }
+            setBusy("Submitting verification\u2026");
+            try {
+              await submitParam(verifyParam);
+              setDone("Verified \u2014 keep this tab open; it auto-verifies on demand.");
+            } catch (err) {
+              setDone("Backend submit failed: " + err.message);
+            }
+          },
+          fail: (err) => {
+            console.error("[captcha] verification failed:", err);
+            // Count the failure so the keeper loop can circuit-break.
+            try { sessionStorage.setItem(SS.fails, String(Number(sessionStorage.getItem(SS.fails) || 0) + 1)); } catch { /* ignore */ }
+            setDone("Verification failed \u2014 a puzzle may be needed; reopen this tab.");
+          },
+          onError: (err) => {
+            console.error("[captcha] SDK error:", err);
+            setDone("Captcha load error \u2014 reload this tab.");
+          },
+        });
+      } finally {
+        verifying = false;
+      }
+    }
+
+    // Keeper loop: long-poll janus; when a request needs a fresh verifyParam,
+    // do a FULL page reload. A reload re-runs the initial (fresh-load) traceless
+    // verification — the exact path that produces an accepted param — instead of
+    // destroy+re-init in the same load, which reuses stale SDK state and gets
+    // rejected. This makes a single always-open tab serve every request (k3s:
+    // no click per request; local: the auto-opened tab keeps serving).
+    //
+    // Storm protection: the backoff + circuit state live in sessionStorage so
+    // they SURVIVE the reload (a page-local var resets to 0 on every reload,
+    // which would make the backoff a no-op and reload in a tight loop). We also
+    // never reload while a verify is still in flight, and we stop reloading
+    // entirely after a few consecutive failed verifies (circuit breaker) so a
+    // broken verify can't hammer Aliyun.
+    const SS = { lastReload: "zcode.keeper.lastReload", fails: "zcode.keeper.fails" };
+    const MAX_CONSECUTIVE_FAILS = 3;
+    const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+    const ssSet = (k, v) => { try { sessionStorage.setItem(k, String(v)); } catch { /* ignore */ } };
+    async function keeperLoop(config) {
+      for (;;) {
+        let challenge = false;
+        try {
+          const res = await fetch("/v1/zcode/captcha/poll?wait=25000");
+          challenge = (await res.json()).challenge === true;
+        } catch (e) {
+          // janus briefly unreachable; back off and retry.
+          await new Promise((r) => setTimeout(r, 3000));
+          continue;
+        }
+        if (!challenge) continue;
+        // A verify is already in flight this load — let it finish, don't reload.
+        if (verifying) continue;
+        // Circuit breaker: too many consecutive failed verifies -> stop.
+        const fails = Number(ssGet(SS.fails) || 0);
+        if (fails >= MAX_CONSECUTIVE_FAILS) {
+          setDone("Verification keeps failing — stop and reopen this tab.");
+          return;
+        }
+        // Backoff: if we reloaded recently and the verify didn't land, wait.
+        const since = Date.now() - Number(ssGet(SS.lastReload) || 0);
+        if (since < 10000) {
+          await new Promise((r) => setTimeout(r, 10000 - since));
+          continue; // re-poll; the verify may have landed meanwhile
+        }
+        ssSet(SS.lastReload, Date.now());
+        setBusy("Request needs verification \u2014 refreshing\u2026");
+        location.reload();
+        return; // page is reloading; the fresh load re-enters keeperLoop
+      }
+    }
+
+    async function init() {
+      if (typeof window.initAliyunCaptcha !== "function") {
+        setDone("Aliyun captcha SDK failed to load \u2014 check network and reload.");
+        return;
+      }
+      let config;
+      try {
+        const res = await fetch("/v1/zcode/captcha/config");
+        config = await res.json();
+      } catch {
+        setDone("Could not load captcha config.");
+        return;
+      }
+      if (config.enabled === false) {
+        setDone("Captcha verification is not required right now. You can close this page.");
+        return;
+      }
+      // Verify once on load, then keep serving on demand.
+      await runVerification(config);
+      keeperLoop(config);
+    }
+    init();
+  </script>
+</body>
+</html>

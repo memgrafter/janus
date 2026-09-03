@@ -1,0 +1,22 @@
+---
+id: jan-dl7y
+status: closed
+open: false
+deps: []
+links: []
+created: 2026-09-03T11:41:02Z
+type: research
+priority: 2
+assignee: memgrafter
+parent: jan-7uv8
+tags: [providers, zai, glm, captcha, investigation]
+---
+# ZCode captcha: per-request 3007, single-use verifyParam, no session affinity — live investigation results
+
+Live investigation of the ZCode Coding Plan captcha behavior against the real upstream (zcode.z.ai) using a local ZCode JWT. Results: (1) EVERY request is challenged with 3007 — even the first request with no cached param. (2) The Aliyun verifyParam is SINGLE-USE: a fresh param is accepted (retry -> 200/3009) but a cached param (16s-148s old) is rejected with 3007. The 9router PR's 45s cache TTL (and our 300s default) is a dead letter on this account. (3) Captcha is NOT per-session: same x-session-id, no param, after a solved request -> 3007 again. (4) The 9router PR (decolua/9router#3614 / #1848) has no explanation in body or comments (0 comments on both); its code is semantically identical (fresh x-request-id/x-query-id per request, stable x-session-id, cached param, invalidate on 3007) — it just solves invisibly via CloakBrowser (stealth headless Chromium, persistent profile ~/.cloakbrowser/profiles/9router-zcode) with a headed fallback. (5) Headless system browser (Brave --headless) FAILS: Aliyun FeiLin SDK logs Error/NaN in headless mode, no verifyParam produced — confirms why the PR needs a stealth browser. (6) New error codes observed live: 3006 model not allowed (model not in plan), 3009 model concurrency limit exceeded (free-tier throttle), both added to janus error taxonomy. (7) GLM-5.3 is the free-tier model (start-plan lists GLM-5.3 + GLM-5-Turbo); GLM-5.2/5.1/4.7 -> 3006. Hypothesis for why the real ZCode app rarely captchas: persistent stealth browser profile builds Aliyun device trust over time; raw HTTP with no fingerprint continuity is challenged every time. Open question for follow-up: inspect the ZCode desktop app (deb) to see how it drives the captcha (embedded browser? persistent profile? pre-clearance?). Related: jan-7uv8 (implementation), jan-j61u (original research).
+
+## Notes
+
+**2026-09-03T11:49:17Z**
+
+DEB INVESTIGATION (ZCode-3.10.2-linux-x64.deb, extracted to /tmp/zcode-deb, asar unpacked): The real ZCode app is an Electron app. Captcha is driven by the RENDERER (app.asar out/renderer/assets/styles-*.js) via the Aliyun SDK (initAliyunCaptcha, startTracelessVerification), NOT a separate CloakBrowser/Playwright launch for the chat path (playwright-core IS bundled but used for other features). Key findings from the minified renderer: (1) The app verifies PROACTIVELY before every model request (source:'send_preflight'), not reactively on 3007 — int()/rnt() runs a FRESH traceless verification (Ett, allowInteractive:true, interactive fallback) each time. (2) The verifyParam is NOT cached for reuse: S = Wtt.delete() clears the stored param right after each send. A fresh param (fresh certifyId) is produced per request. (3) The app EXPLICITLY handles the single-use case: ltt() detects Aliyun verifyCode F008 '重复提交'/'只允许提交一次' (duplicate submission / submit-once-only), and nnt() WARNS when a certifyId matches the previous round ('certifyId 与上一轮相同，请求可能触发 F008 重复提交'). This CONFIRMS the param/certifyId is single-use — matching my live 3007-on-reuse finding. (4) Only the captcha CONFIG (sceneId/prefix/region) is cached, for 60s (w$: expiresAt = now+6e4). (5) On a 3007 mid-stream, the app auto-recovers ('3007 自动恢复') by running a fresh verification (ant, source:'captcha_retry') and re-dispatching with the new param. (6) The verification runs in the app's OWN persistent Electron webview (real Chromium, persistent user-data-dir) — that trusted, fingerprint-continuous browser context is why traceless verification passes INVISIBLY (no puzzle) for the app's users. CONCLUSION: the app does verify on essentially every request, but it's (a) traceless/silent inside its own trusted browser and (b) proactive preflight, so users never see it. The 9router PR's 45s param cache is ineffective for the same single-use reason; it just re-solves invisibly via headless CloakBrowser. For janus, the faithful fix is: run a fresh traceless verification in a persistent headless browser (Playwright+Chromium with a persistent user-data-dir) before each request / on 3007 — invisible, matching the app. The visible-browser approach works but shows a window per request because janus has no trusted persistent browser context.

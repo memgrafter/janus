@@ -6,7 +6,7 @@ Guidance for agents working in this repo. Read this first.
 
 **pi-janus** — a local, **OpenAI-compatible** inference proxy built on `@earendil-works/pi-ai` (the client engine from the pi-mono monorepo). It speaks the OpenAI Chat Completions API and routes requests through pi-ai's unified multi-provider client.
 
-End-to-end vision is an **inference control plane** (proxy + source/sink router + signal emitter + quota/deadline/priority + telemetry). **Built so far:** the OpenAI-compatible core (`POST /v1/chat/completions`, `GET /v1/models`, `GET /health`) **plus the control plane** — quota/deadline ledger, category registry, priority queue + allocator, event intake + project routing, and the OpenAI Responses API (`POST /v1/responses`). The signal emitter (trigger jobs, start/stop streams) is the remaining direction.
+End-to-end vision is an **inference control plane** (proxy + source/sink router + signal emitter + quota/deadline/priority + telemetry). **Built so far:** the OpenAI-compatible core (`POST /v1/chat/completions`, `GET /v1/models`, `GET /health`) **plus the control plane** — quota/deadline ledger, category registry, priority queue + allocator, event intake + project routing, the OpenAI Responses API (`POST /v1/responses`), and the ZCode/Z.AI (GLM) provider (`zcode` + `zcode-apikey`). The signal emitter (trigger jobs, start/stop streams) is the remaining direction.
 
 ## Commands
 
@@ -64,6 +64,10 @@ src/
   queue.ts       PriorityQueue (binary max-heap) + WorkItem + runAllocator (expire/hold/drive)
   telemetry.ts   Telemetry port + InMemoryTelemetry (bounded ring; exposed via /v1/telemetry)
   responses.ts   OpenAI Responses API wire-format: parseResponsesRequest, responseToOpenAI, ResponsesChunker
+  zcode.ts       ZCode/Z.AI (GLM) providers: Coding Plan (JWT + fingerprint + system prompt + captcha) & API-key upstreams, error taxonomy
+  zcode-conf.ts  zcode.conf hot-readable credential/config loader (mtime/size cache)
+  zcode-captcha.ts  Aliyun captcha verifyParam cache (TTL, ratchet, deduped waiters)
+  zcode-captcha-page.txt  the captcha solve page (served at /zcode/captcha.html)
   openai.ts      Chat Completions wire-format + shared Internal* types; parseChatRequest; StreamChunker; OpenAIError
   bridge.ts      toPiContext(req,model), toPiStreamOptions(req), assistantMessageToInternal(msg)
   sse.ts         sseHeaders, sseData, sseDone, jsonHeaders, jsonResponse
@@ -81,6 +85,9 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 - `GET /v1/work/:id` — poll a work item's status/result.
 - `GET /v1/telemetry` — the in-memory telemetry ring (quota/deadline/rate-limit observations).
 - `GET /health` — liveness.
+- `GET /zcode/captcha.html` — ZCode captcha solve page (unauthenticated; the Aliyun SDK runs client-side).
+- `GET /v1/zcode/captcha/config` — captcha scene config for the page (unauthenticated).
+- `POST /v1/zcode/captcha/submit` — submit a solved `verifyParam` (unauthenticated).
 
 ### Control plane flow
 
@@ -104,8 +111,13 @@ Model id / category resolution: a request's `model` may be a **category id** or 
 | `PI_JANUS_CONFIG` | _(unset)_ | path to a JSON control-plane config (buckets/categories/projects); unset = inert plane |
 | `PI_JANUS_ALLOC_MS` | `1000` | allocator tick interval (ms) for queued event work |
 | `PI_JANUS_MODELS_JSON` | _(unset)_ | path to a pi `models.json` provider catalog (e.g. `~/.pi/agent/models.json`); registers those providers alongside the builtins |
+| `JANUS_ZCODE` | _(unset)_ | `1`/`true` to enable the ZCode/Z.AI (GLM) providers (`zcode` Coding Plan + `zcode-apikey`) |
+| `JANUS_ZCODE_CONF` | `~/.janus/zcode.conf` | hot-readable ZCode credential/config file (see below); edits take effect without a restart |
+| `JANUS_PUBLIC_URL` | _(unset)_ | public origin for URLs surfaced to clients (e.g. the ZCode captcha page); set for k3s/remote where 127.0.0.1 is unreachable |
 
 Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the environment by pi-ai's built-in providers — pi-janus does not manage them. When `PI_JANUS_MODELS_JSON` is set, `custom-providers.ts` also registers the providers in that catalog (each with its own `baseUrl`/`apiKey`/`api`); a provider's `apiKey` may be a literal (e.g. `"0"`) or an env ref (`"$OPENROUTER_API_KEY"`). Providers with no models, no `api`, or an unknown `api` are skipped with a warning (non-fatal). Request a catalog model as `provider/id` (e.g. `vert-qwen38-dual-fast/qwen3.8-27b`).
+
+**ZCode/Z.AI (GLM) provider** (`JANUS_ZCODE=1`): two Anthropic-format upstreams, credentials from a hot-readable `zcode.conf` (`JANUS_ZCODE_CONF`, `chmod 600` — it holds live credentials; no ZCode app install required). Both providers are always registered; each is listed by `/v1/models` only while its credential is present, so adding/rotating a credential needs no restart. `zcode` = Coding Plan (`zcode.z.ai`, `Authorization: Bearer <zcodeJwt>` + ZCode fingerprint headers + system-prompt injection + `glm-5.2`→`GLM-5.2` mapping), gated by an Aliyun captcha (body code `3007`): janus serves `/zcode/captcha.html`, the solved `verifyParam` is cached for `captchaTtlMs` (default 300s) and rides on `X-Aliyun-Captcha-Verify-Param`; a rejected cached param is dropped (ratchet) and re-challenged. `zcode-apikey` = `api.z.ai` with `x-api-key` (no captcha). Error taxonomy is matched on body codes: `401` re-authenticate, `3007` captcha (URL surfaced in the error; browser auto-opened locally), `1113` quota, `3010` concurrency. Request models as `zcode/glm-5.2` or `zcode-apikey/glm-5.2`.
 
 ## pi-ai API surface used
 
@@ -145,8 +157,10 @@ Work is tracked with the `tk` CLI (file-based, in-repo `.tickets/`). Key command
 | `pj-1s1x` | 2 | Priority queue & expiring-work allocation | core, quota |
 | `pj-gz47` | 3 | Event-driven request intake & project routing | core, priority |
 | `pj-q1fg` | 2 | OpenAI Responses API (`/v1/responses`) | core |
+| `jan-j61u` | 2 | ZCode/Z.AI (GLM) provider: research (9router PR #3614 + live probing) | — |
+| `jan-7uv8` | 2 | ZCode/Z.AI provider: zcode.conf (hot-read), dual-upstream GLM, captcha page + 300s cache | jan-j61u |
 
-**Implemented + tested (unit + integration + live):** core (`pj-vwed`), quota/deadline ledger (`pj-xe41`), category registry (`pj-1uyc`), priority queue + allocation (`pj-1s1x`), event intake + routing (`pj-gz47`), and the Responses API (`pj-q1fg`). Remaining: CI/CD (`pj-t1q2`) and the **control-plane signal emitter** (trigger jobs, start/stop streams) — the eventual direction, **not yet a ticket**. Known gap: pi-ai's `DeferredHandle` is only implemented by the faux provider, so real-provider expiring-work (`fetchDeferred`/`cancelDeferred`) is not yet exercisable end-to-end.
+**Implemented + tested (unit + integration + live):** core (`pj-vwed`), quota/deadline ledger (`pj-xe41`), category registry (`pj-1uyc`), priority queue + allocation (`pj-1s1x`), event intake + routing (`pj-gz47`), the Responses API (`pj-q1fg`), and the ZCode/Z.AI (GLM) provider (`jan-7uv8`). Remaining: CI/CD (`pj-t1q2`) and the **control-plane signal emitter** (trigger jobs, start/stop streams) — the eventual direction, **not yet a ticket**. Known gap: pi-ai's `DeferredHandle` is only implemented by the faux provider, so real-provider expiring-work (`fetchDeferred`/`cancelDeferred`) is not yet exercisable end-to-end.
 
 ## Reference
 
