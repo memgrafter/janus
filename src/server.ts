@@ -8,6 +8,7 @@ import type { AssistantMessage, AssistantMessageEvent, ToolCall, Usage } from "@
 import { assistantMessageToInternal, toPiContext, toPiStreamOptions } from "./bridge.ts";
 import { loadPlaneConfig, type Config } from "./config.ts";
 import { CLINE_PASS_PROVIDER_ID, withClinePassWireModel } from "./cline-pass.ts";
+import { withWireModel } from "./custom-providers.ts";
 import { Control, type Dispatcher, type PlaneConfig } from "./control.ts";
 import { createClient, type Client } from "./models.ts";
 import {
@@ -140,7 +141,7 @@ function makeDispatcher(client: Client): Dispatcher {
 	return {
 		async complete(model, req, timeoutMs) {
 			const context = toPiContext(req, model);
-			const options = toPiStreamOptions(req, clinePassOnPayload(model));
+			const options = toPiStreamOptions(req, combinedOnPayload(model));
 			if (timeoutMs) options.timeoutMs = timeoutMs;
 			return client.models.complete(model, context, options);
 		},
@@ -160,18 +161,19 @@ function clinePassOnPayload(model: { provider?: string; id: string; wireModel?: 
 
 /**
  * Per-model onPayload: ClinePass wire-model rewrite and/or the ZCode Coding
- * Plan wire-model + system-prompt injection. Both are no-ops for other
- * providers, so this is safe to pass for every request.
+ * Plan wire-model + system-prompt injection, then the generic models.json
+ * wire-model rewrite (id -> wireModel). All are no-ops for models that don't
+ * use them, so this is safe to pass for every request.
  */
 function combinedOnPayload(model: { provider?: string; id: string; wireModel?: string }): (payload: unknown, m: { id: string }) => unknown | undefined {
 	const cline = clinePassOnPayload(model);
 	const zcode = zcodeOnPayload(model);
-	if (!cline && !zcode) return (payload) => payload;
+	if (!cline && !zcode) return (payload) => withWireModel(payload, model) ?? payload;
 	return (payload, m) => {
 		let next = payload;
 		if (cline) next = cline(next, m as any) ?? next;
 		if (zcode) next = zcode(next, m) ?? next;
-		return next;
+		return withWireModel(next, model) ?? next;
 	};
 }
 

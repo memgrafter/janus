@@ -30,6 +30,13 @@ interface ModelsJsonModel {
 	maxTokens?: number;
 	samplingParams?: Record<string, unknown>;
 	compat?: Record<string, unknown>;
+	/**
+	 * Optional: the exact `model` value to send to the upstream, when it differs
+	 * from this model's id (e.g. id "qwen-3.8-27b-free" -> wire "qwen-3.8-27b").
+	 * pi-ai sends model.id verbatim, so the server rewrites the payload via the
+	 * wireModel onPayload hook. Omitted = send the id unchanged.
+	 */
+	wireModel?: string;
 }
 
 interface ModelsJsonProvider {
@@ -58,6 +65,8 @@ function modelFromJson(providerId: string, def: ModelsJsonModel, cfg: ModelsJson
 	if (!api) throw new Error(`provider "${providerId}", model "${def.id}": no "api" specified`);
 	const baseUrl = def.baseUrl ?? cfg.baseUrl;
 	if (!baseUrl) throw new Error(`provider "${providerId}": "baseUrl" is required`);
+	// wireModel is a janus-internal alias (not a pi-ai Model field), so attach it
+	// via a cast — the server's wireModel onPayload hook reads it back.
 	return {
 		id: def.id,
 		name: def.name ?? def.id,
@@ -71,7 +80,8 @@ function modelFromJson(providerId: string, def: ModelsJsonModel, cfg: ModelsJson
 		maxTokens: def.maxTokens ?? 16384,
 		samplingParams: def.samplingParams,
 		compat: { ...cfg.compat, ...def.compat } as Model<Api>["compat"],
-	};
+		...(def.wireModel ? { wireModel: def.wireModel } : {}),
+	} as Model<Api>;
 }
 
 function providerFromJson(providerId: string, cfg: ModelsJsonProvider): Provider {
@@ -99,6 +109,22 @@ function providerFromJson(providerId: string, cfg: ModelsJsonProvider): Provider
 		models,
 		api: apiImpl as ProviderStreams,
 	});
+}
+
+/**
+ * Rewrite a request payload's `model` field to the model's `wireModel` when it
+ * differs from the id. pi-ai sends model.id verbatim, so this is how a
+ * janus-facing id (e.g. "qwen-3.8-27b-free") maps to a different upstream id
+ * (e.g. "qwen-3.8-27b"). Returns undefined (no change) when the model has no
+ * wireModel, it already matches, or the payload is not a plain object.
+ */
+export function withWireModel(payload: unknown, model: { wireModel?: string }): unknown | undefined {
+	const wire = model.wireModel;
+	if (!wire) return undefined;
+	if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+	const p = payload as Record<string, unknown>;
+	if (typeof p.model !== "string" || p.model === wire) return undefined;
+	return { ...p, model: wire };
 }
 
 /**
