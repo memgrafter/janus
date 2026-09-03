@@ -3,7 +3,7 @@ import { createModels } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { registerModelsJson } from "../../src/custom-providers.ts";
+import { registerModelsJson, withWireModel } from "../../src/custom-providers.ts";
 import { resolveModel } from "../../src/models.ts";
 
 const FIXTURE = new URL("../fixtures/custom-models.json", import.meta.url).pathname;
@@ -39,6 +39,46 @@ describe("registerModelsJson", () => {
 		expect(registered).toEqual(["goodprov"]);
 		expect(models.getModels().some((m) => m.provider === "badprov")).toBe(false);
 		expect(models.getModels().some((m) => m.provider === "goodprov")).toBe(true);
+	});
+
+	it("attaches a wireModel alias to a model (id != upstream wire id)", () => {
+		const path = tempModelsJson({
+			providers: {
+				cer: { baseUrl: "http://c/v1", api: "openai-completions", apiKey: "k", models: [{ id: "qwen-3.8-27b-free", wireModel: "qwen-3.8-27b", contextWindow: 65536, maxTokens: 32768 }] },
+			},
+		});
+		const models = createModels();
+		registerModelsJson(models, path);
+		const m = resolveModel(models, "cer/qwen-3.8-27b-free");
+		expect(m.id).toBe("qwen-3.8-27b-free");
+		expect((m as { wireModel?: string }).wireModel).toBe("qwen-3.8-27b");
+		// a model without wireModel has none
+		const path2 = tempModelsJson({
+			providers: { cer2: { baseUrl: "http://c/v1", api: "openai-completions", apiKey: "k", models: [{ id: "plain", contextWindow: 100, maxTokens: 10 }] } },
+		});
+		const models2 = createModels();
+		registerModelsJson(models2, path2);
+		expect((resolveModel(models2, "cer2/plain") as { wireModel?: string }).wireModel).toBeUndefined();
+	});
+
+	describe("withWireModel", () => {
+		it("rewrites the payload model to wireModel when it differs", () => {
+			const out = withWireModel({ model: "qwen-3.8-27b-free", messages: [] }, { wireModel: "qwen-3.8-27b" });
+			expect(out).toEqual({ model: "qwen-3.8-27b", messages: [] });
+		});
+
+		it("returns undefined when wireModel is absent", () => {
+			expect(withWireModel({ model: "x" }, {})).toBeUndefined();
+		});
+
+		it("returns undefined when the payload model already equals wireModel", () => {
+			expect(withWireModel({ model: "qwen-3.8-27b" }, { wireModel: "qwen-3.8-27b" })).toBeUndefined();
+		});
+
+		it("returns undefined for non-object payloads", () => {
+			expect(withWireModel(null, { wireModel: "y" })).toBeUndefined();
+			expect(withWireModel([1, 2], { wireModel: "y" })).toBeUndefined();
+		});
 	});
 
 	it("marks a $ENV_VAR provider available only when the env var is set", async () => {
