@@ -7,9 +7,6 @@ metadata:
 {{- if and .Values.cline.enabled (not .Values.persistence.enabled) }}
 {{- fail "cline.enabled requires persistence.enabled: the Cline credential file (providers.json) must be writable and persistent so pi-janus can write back rotated refresh tokens" }}
 {{- end }}
-{{- if and .Values.zcode.enabled (not .Values.persistence.enabled) }}
-{{- fail "zcode.enabled requires persistence.enabled: zcode.conf is seeded into the PVC and hot-read (a rotated JWT can be pushed with kubectl cp, no restart)" }}
-{{- end }}
 spec:
   # 1 replica: the auth store uses a local advisory lockfile (proper-lockfile),
   # which is unsafe across multiple replicas sharing the PVC (advisory locks are
@@ -29,7 +26,7 @@ spec:
       imagePullSecrets:
         - name: {{ .Values.image.pullSecret }}
       {{- end }}
-      {{- if or .Values.persistence.enabled .Values.auth.existingAuthSecret .Values.cline.enabled .Values.zcode.enabled }}
+      {{- if or .Values.persistence.enabled .Values.auth.existingAuthSecret .Values.cline.enabled }}
       initContainers:
         {{- if .Values.persistence.enabled }}
         - name: fix-permissions
@@ -67,21 +64,6 @@ spec:
             - name: data
               mountPath: {{ .Values.persistence.mountPath }}
         {{- end }}
-        {{- if .Values.zcode.enabled }}
-        # Seed zcode.conf into the PVC ONLY IF ABSENT. pi-janus hot-reads it
-        # (mtime/size cache), so a rotated JWT is pushed with `kubectl cp` over
-        # the PVC file — no restart, no re-seed. Re-copying on every start would
-        # clobber a live edit with the (stale) Secret snapshot.
-        - name: seed-zcode
-          image: busybox:latest
-          command: ["sh", "-c", "if [ ! -f {{ .Values.persistence.mountPath }}/zcode.conf ]; then cp /zcode/zcode.conf {{ .Values.persistence.mountPath }}/zcode.conf; fi && chown 65532:65532 {{ .Values.persistence.mountPath }}/zcode.conf"]
-          volumeMounts:
-            - name: zcode-seed
-              mountPath: /zcode
-              readOnly: true
-            - name: data
-              mountPath: {{ .Values.persistence.mountPath }}
-        {{- end }}
       {{- end }}
       containers:
         - name: proxy
@@ -103,16 +85,6 @@ spec:
               value: "1"
             - name: JANUS_CLINE_PROVIDERS_JSON
               value: {{ .Values.persistence.mountPath }}/providers.json
-            {{- end }}
-            {{- if .Values.zcode.enabled }}
-            - name: JANUS_ZCODE
-              value: "1"
-            - name: JANUS_ZCODE_CONF
-              value: {{ .Values.persistence.mountPath }}/zcode.conf
-            {{- if .Values.zcode.publicUrl }}
-            - name: JANUS_PUBLIC_URL
-              value: {{ .Values.zcode.publicUrl | quote }}
-            {{- end }}
             {{- end }}
             {{- if .Values.auth.noLock }}
             - name: JANUS_AUTH_NO_LOCK
@@ -159,7 +131,7 @@ spec:
               mountPath: /etc/janus-inference-control-plane
             {{- end }}
           {{- end }}
-      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.auth.existingAuthSecret .Values.cline.enabled .Values.zcode.enabled }}
+      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.auth.existingAuthSecret .Values.cline.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -180,10 +152,5 @@ spec:
         - name: cline-seed
           secret:
             secretName: {{ .Values.cline.existingSecret }}
-        {{- end }}
-        {{- if .Values.zcode.enabled }}
-        - name: zcode-seed
-          secret:
-            secretName: {{ .Values.zcode.existingSecret }}
         {{- end }}
       {{- end }}

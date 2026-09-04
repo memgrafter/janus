@@ -51,20 +51,6 @@ export interface Config {
    * staging/local. The gateway is <base>/api/v1 and refresh is <base>/api/v1/auth/refresh.
    */
   clineApiBaseUrl: string;
-  /** Enable the ZCode (Z.AI GLM) providers, reading credentials from zcodeConfPath. */
-  zcode: boolean;
-  /**
-   * Path to zcode.conf (hot-readable; edited without restart). Holds the Coding
-   * Plan JWT and/or biz apiKey, captcha TTL (default 300s), and overrides.
-   * Defaults to ~/.janus/zcode.conf when zcode is enabled.
-   */
-  zcodeConfPath?: string;
-  /**
-   * Public origin (scheme + host[:port]) for URLs surfaced to clients — e.g. the
-   * ZCode captcha page. Set for k3s/remote deployments where 127.0.0.1 is not
-   * reachable from the user's browser. Unset = http://127.0.0.1:<bound port>.
-   */
-  publicUrl?: string;
   /** Allocator tick interval in milliseconds. */
   allocMs: number;
 }
@@ -84,9 +70,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     clinePass: env["JANUS_CLINE_PASS"] === "1" || env["JANUS_CLINE_PASS"] === "true",
     clineProvidersPath: env["JANUS_CLINE_PROVIDERS_JSON"] || join(homedir(), ".cline", "data", "settings", "providers.json"),
     clineApiBaseUrl: env["JANUS_CLINE_API_BASE_URL"] || "https://api.cline.bot",
-    zcode: env["JANUS_ZCODE"] === "1" || env["JANUS_ZCODE"] === "true",
-    zcodeConfPath: env["JANUS_ZCODE_CONF"] || join(homedir(), ".janus", "zcode.conf"),
-    publicUrl: env["JANUS_PUBLIC_URL"] || undefined,
     allocMs: intEnv(env["JANUS_ALLOC_MS"], 1000),
   };
 }
