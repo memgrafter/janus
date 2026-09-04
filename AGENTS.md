@@ -18,6 +18,7 @@ bun install                 # needs bun on PATH (see Gotchas)
 ./scripts/build.sh --target linux-x64   # a specific platform -> dist/<plat>/pi-janus
 ./scripts/test.sh           # build -> typecheck -> unit+integration -> live (built binary)
 ./scripts/release.sh        # all 6 platforms + SHA256SUMS
+./chart/k3s-release.sh      # test + AMD64 image + push + Helm deploy + real-agent smoke
 ```
 
 Individual steps (already wired into `test.sh`):
@@ -33,11 +34,11 @@ Run the server: `./dist/pi-janus` (listens on `http://127.0.0.1:8787`), or `bun 
 ## Builds
 
 - `scripts/build.sh` is the only binary build entrypoint. Run `scripts/test.sh` before release.
-- Container releases use the repository `Dockerfile`. It runs `bun install`, overlays `vendor/pi-ai`, then calls `scripts/build.sh --skip-deps`.
+- Container releases use the repository `Dockerfile`. Its default target runs `bun install`, overlays `vendor/pi-ai`, then calls `scripts/build.sh --skip-deps`.
 - Refresh `vendor/pi-ai` with `scripts/vendor-pi-ai.sh` only when intentionally updating pi-ai. Do not bypass the overlay with a host-built binary.
-- Build k3s images on native AMD64. If Bun fails under QEMU on an ARM host, use a native AMD64 Docker host and transfer the finished image to a registry-capable host for pushing.
-- Push both an immutable tag and `latest`. For a dirty tree, include a content hash in the immutable tag. Pin Helm values to the immutable tag.
-- After deployment, verify `/health` and run a real pi agent through existing providers and the new provider. A curl-only smoke test is insufficient.
+- Use `chart/k3s-release.sh` for k3s. It preserves the latest successful Helm values, prunes removed top-level values, validates Helm server-side, builds with the vendor overlay, verifies the binary and image are AMD64, pushes immutable + `latest`, deploys with rollback, and runs health + real-agent smoke tests.
+- On ARM hosts the k3s script cross-compiles the baseline linux-x64 binary natively and packages it through the Dockerfile's copy-only `runtime-prebuilt` target. This avoids running Bun under QEMU while retaining the vendor overlay.
+- The k3s script pins Helm to an immutable tag; dirty trees receive a content hash. Do not replace the script with an ad hoc `docker build` / `helm upgrade` sequence.
 
 ## Architecture
 
