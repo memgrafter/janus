@@ -106,7 +106,7 @@ cline:
 helm upgrade --install janus-inference-control-plane ./chart/ -f <your-values.yaml> -n <ns>
 ```
 
-**How the seeding works:** an init container copies the Secret's `providers.json` into the PVC **only if it isn't already there**. After the first seed the PVC is the source of truth (it holds the rotated tokens), so a pod restart does **not** clobber them with the stale Secret snapshot. To push a fresh login into the cluster: update the Secret, then delete the PVC's `providers.json` (or the whole PVC) and restart the pod.
+**How the seeding works:** init containers copy `auth.json` and `providers.json` from their Secrets into the PVC **only if the corresponding file isn't already there**. After the first seed the PVC is the source of truth (it holds the rotated tokens), so a pod restart does **not** clobber them with stale Secret snapshots. To push a fresh login into the cluster: update the relevant Secret, remove its credential file from the PVC (or replace the file directly), and restart the pod.
 
 **Caveat:** token refresh *rotates* the refresh token. The Cline CLI does not lock `providers.json`, so if the CLI and pi-janus refresh at the exact same moment on the same machine, one can double-spend the rotated token (rare — both only refresh in the final 5 minutes before expiry). Re-running `cline auth cline-pass` fixes it.
 

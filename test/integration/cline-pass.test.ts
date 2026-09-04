@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,6 +56,12 @@ beforeAll(async () => {
 			if (url.pathname === "/api/v1/chat/completions") {
 				const body = (await req.json()) as any;
 				captured = { authorization: req.headers.get("authorization"), model: body.model };
+				if (body.messages?.some((message: any) => message.content === "force provider error")) {
+					return new Response(JSON.stringify({ error: { message: "mock provider rejected request" } }), {
+						status: 400,
+						headers: { "content-type": "application/json" },
+					});
+				}
 				return sseResponse(body.model, "clinepass mock ok");
 			}
 			if (url.pathname === "/api/v1/auth/refresh") {
@@ -172,6 +178,28 @@ describe("integration (ClinePass via local mock gateway)", () => {
 		expect(extractContentDeltas(text)).toBe("clinepass mock ok");
 		expect(text.trim().endsWith("data: [DONE]")).toBe(true);
 		expect(captured.model).toBe("cline-pass/kimi-k3");
+	});
+
+	it("logs the underlying provider error instead of silently reducing it to finish_reason=error", async () => {
+		const errorLog = spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const res = await fetch(`${base}/chat/completions`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					model: "cline-pass/glm-5.3",
+					messages: [{ role: "user", content: "force provider error" }],
+					stream: true,
+				}),
+			});
+			expect(res.status).toBe(200);
+			const text = await res.text();
+			expect(text).toContain('"finish_reason":"error"');
+			expect(errorLog).toHaveBeenCalledWith(expect.stringContaining("mock provider rejected request"));
+			expect(errorLog).toHaveBeenCalledWith(expect.stringContaining("cline-pass/glm-5.3"));
+		} finally {
+			errorLog.mockRestore();
+		}
 	});
 
 	it("still rewrites the wire model to the full slug when reasoning_effort is present", async () => {
