@@ -37,9 +37,12 @@ spec:
               mountPath: {{ .Values.persistence.mountPath }}
         {{- end }}
         {{- if .Values.auth.existingAuthSecret }}
+        # Seed OAuth credentials only once. pi-janus persists rotated refresh
+        # tokens here, so replacing the file on every restart can restore a stale
+        # Secret snapshot and make the rotated refresh token unusable.
         - name: seed-auth
           image: busybox:latest
-          command: ["sh", "-c", "cp /auth/auth.json {{ .Values.persistence.mountPath }}/auth.json && chown 65532:65532 {{ .Values.persistence.mountPath }}/auth.json"]
+          command: ["sh", "-c", "if [ ! -f {{ .Values.persistence.mountPath }}/auth.json ]; then cp /auth/auth.json {{ .Values.persistence.mountPath }}/auth.json; fi && chown 65532:65532 {{ .Values.persistence.mountPath }}/auth.json && chmod 600 {{ .Values.persistence.mountPath }}/auth.json"]
           volumeMounts:
             - name: auth-seed
               mountPath: /auth
@@ -56,7 +59,7 @@ spec:
         # whole PVC) and restart, or kubectl cp over it.
         - name: seed-cline
           image: busybox:latest
-          command: ["sh", "-c", "if [ ! -f {{ .Values.persistence.mountPath }}/providers.json ]; then cp /cline/providers.json {{ .Values.persistence.mountPath }}/providers.json; fi && chown 65532:65532 {{ .Values.persistence.mountPath }}/providers.json"]
+          command: ["sh", "-c", "if [ ! -f {{ .Values.persistence.mountPath }}/providers.json ]; then cp /cline/providers.json {{ .Values.persistence.mountPath }}/providers.json; fi && chown 65532:65532 {{ .Values.persistence.mountPath }}/providers.json && chmod 600 {{ .Values.persistence.mountPath }}/providers.json"]
           volumeMounts:
             - name: cline-seed
               mountPath: /cline

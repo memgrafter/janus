@@ -26,7 +26,9 @@ persistence:
 # Bearer token for API auth (JANUS_TOKEN). Empty = no auth.
 auth:
   existingSecret: ""
-  existingAuthSecret: ""   # Secret with auth.json (for OAuth providers like openai-codex)
+  # Secret with auth.json (for OAuth providers like openai-codex). Seeded into
+  # the PVC only when auth.json is absent; the PVC then owns rotated tokens.
+  existingAuthSecret: ""
   noLock: false              # JANUS_AUTH_NO_LOCK: skip cross-process lock (single-process deployments)             # k8s Secret name
   tokenKey: token                # key within the secret
 

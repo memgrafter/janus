@@ -122,7 +122,9 @@ function makeDispatcher(client: Client): Dispatcher {
 			const context = toPiContext(req, model);
 			const options = toPiStreamOptions(req, combinedOnPayload(model));
 			if (timeoutMs) options.timeoutMs = timeoutMs;
-			return client.models.complete(model, context, options);
+			const message = await client.models.complete(model, context, options);
+			if (message.stopReason === "error") logProviderError(model, message.errorMessage);
+			return message;
 		},
 	};
 }
@@ -290,6 +292,7 @@ async function handleChat(req: Request, client: Client, control: Control, config
 
 	if (!internal.stream) {
 		const msg = await client.models.complete(ctx.model, context, options);
+		if (msg.stopReason === "error") logProviderError(ctx.model, msg.errorMessage);
 		control.ledger.record(ctx.quotaBucketId, msg.usage);
 		return jsonResponse(completionToOpenAI(assistantMessageToInternal(msg)), 200);
 	}
@@ -310,11 +313,13 @@ async function handleChat(req: Request, client: Client, control: Control, config
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
+					else if (event.type === "error") logProviderError(ctx.model, event.error.errorMessage);
 					const out = mapEventToChunk(chunker, event);
 					if (out) { push(out); keepAlive.stop(); }
 				}
 			} catch (e) {
-				push({ error: { message: e instanceof Error ? e.message : String(e) } });
+				const message = logProviderError(ctx.model, e);
+				push({ error: { message } });
 			} finally {
 				keepAlive.stop();
 				try { controller.enqueue(encoder.encode(sseDone())); controller.close(); } catch { /* client gone */ }
@@ -344,6 +349,7 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 
 	if (!internal.stream) {
 		const msg = await client.models.complete(ctx.model, context, options);
+		if (msg.stopReason === "error") logProviderError(ctx.model, msg.errorMessage);
 		control.ledger.record(ctx.quotaBucketId, msg.usage);
 		return jsonResponse(responseToOpenAI(assistantMessageToInternal(msg), ctx.model.id), 200);
 	}
@@ -363,11 +369,13 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 				const piStream = client.models.stream(ctx.model, context, options);
 				for await (const event of piStream) {
 					if (event.type === "done") control.ledger.record(ctx.quotaBucketId, event.message.usage);
+					else if (event.type === "error") logProviderError(ctx.model, event.error.errorMessage);
 					for (const e of mapResponsesEvent(chunker, event)) { push(e); pushed = true; }
 					if (pushed) keepAlive.stop();
 				}
 			} catch (e) {
-				push({ type: "response.failed", response: { status: "failed", error: { message: e instanceof Error ? e.message : String(e) } } });
+				const message = logProviderError(ctx.model, e);
+				push({ type: "response.failed", response: { status: "failed", error: { message } } });
 			} finally {
 				keepAlive.stop();
 				try { controller.close(); } catch { /* client gone */ }
@@ -417,6 +425,16 @@ function mapResponsesEvent(chunker: ResponsesChunker, event: AssistantMessageEve
 		default:
 			return [];
 	}
+}
+
+function logProviderError(model: { provider: string; id: string }, error: unknown): string {
+	const message = error instanceof Error
+		? error.message
+		: typeof error === "string" && error.trim()
+			? error
+			: "provider returned an unspecified error";
+	console.error(`pi-janus: provider error (${model.provider}/${model.id}): ${message}`);
+	return message;
 }
 
 function mapReason(r: "stop" | "length" | "toolUse" | "deferred"): StopReason {
