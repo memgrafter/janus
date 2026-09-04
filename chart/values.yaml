@@ -40,20 +40,6 @@ cline:
   enabled: false
   existingSecret: ""   # Secret with the Cline CLI's providers.json (key "providers.json")
 
-# ZCode (Z.AI GLM) provider. Serves zcode/* (Coding Plan, JWT) + zcode-apikey/*
-# models from zcode.conf (JWT + captcha settings). Requires persistence.enabled
-# (zcode.conf is seeded into the PVC and hot-read, so a rotated JWT can be
-# pushed with `kubectl cp` + no restart). The Secret (key "zcode.conf") is
-# seeded into the PVC on first start ONLY IF ABSENT — afterwards the PVC is the
-# source of truth. The Coding Plan upstream demands an Aliyun captcha per
-# request; the keeper-tab page at /zcode/captcha.html (reachable via publicUrl)
-# must stay open in a browser to auto-verify. Set captchaAutoOpen=false in
-# zcode.conf (no browser in the container).
-zcode:
-  enabled: false
-  existingSecret: ""   # Secret with zcode.conf (key "zcode.conf")
-  publicUrl: ""        # JANUS_PUBLIC_URL: origin the user's browser can reach (LB IP)
-
 # Provider API keys -> env (e.g. OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY).
 # Built-in providers are auto-offered for each key present. Each entry:
 #   - name: <ENV_VAR>
