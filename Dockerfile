@@ -56,11 +56,21 @@ RUN set -euo pipefail; \
     fi
 
 # ---- runtime: minimal, non-root (glibc for the bun binary) ----
-FROM gcr.io/distroless/base-debian12:nonroot
+FROM gcr.io/distroless/base-debian12:nonroot AS runtime-base
 # A container must listen on all interfaces (the binary's default 127.0.0.1 is
 # for local-proxy mode). Override with JANUS_HOST if needed.
 ENV JANUS_HOST=0.0.0.0
-COPY --from=build /out/pi-janus /pi-janus
 EXPOSE 8787
 USER nonroot
+
+# k3s-release.sh builds the linux-x64 binary on the host, including the vendor
+# overlay, then uses this target to package it without executing Bun under QEMU.
+# Its temporary build context contains exactly one file: pi-janus.
+FROM runtime-base AS runtime-prebuilt
+COPY --chmod=755 pi-janus /pi-janus
+ENTRYPOINT ["/pi-janus"]
+
+# Default container build: compile inside the image as before.
+FROM runtime-base AS runtime
+COPY --from=build /out/pi-janus /pi-janus
 ENTRYPOINT ["/pi-janus"]
