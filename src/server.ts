@@ -281,7 +281,7 @@ async function handleChat(req: Request, client: Client, control: Control, config
 	}
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
-	const options = toPiStreamOptions(internal, clinePassOnPayload(ctx.model));
+	const options = toPiStreamOptions(internal, combinedOnPayload(ctx.model));
 	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream so a
@@ -341,7 +341,7 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 	}
 	const ctx = decision.context;
 	const context = toPiContext(internal, ctx.model);
-	const options = toPiStreamOptions(internal, clinePassOnPayload(ctx.model));
+	const options = toPiStreamOptions(internal, combinedOnPayload(ctx.model));
 	options.timeoutMs = ctx.deadlineMs ?? timeoutMsFromConfig(config);
 	options.onResponse = (response) => control.ledger.observeRateLimit(ctx.quotaBucketId, response.headers);
 	// Propagate the client's abort/disconnect to the upstream pi-ai stream.
