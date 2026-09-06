@@ -24,9 +24,9 @@
  * slug via the `onPayload` hook (see wireModelId / clinePassWireModelId).
  */
 
-import { createProvider, type Api, type Model, type MutableModels, type OAuthCredential, type ProviderStreams } from "@earendil-works/pi-ai";
+import { createProvider, type Api, type Model, type OAuthCredential, type ProviderStreams } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { readClineCredential, withWorkosPrefix } from "./cline-credentials.ts";
+import { withWorkosPrefix } from "./cline-credentials.ts";
 
 /** Provider id used for ClinePass in pi-janus. */
 export const CLINE_PASS_PROVIDER_ID = "cline-pass";
@@ -203,20 +203,6 @@ export function createClinePassProvider(options: { apiBaseUrl?: string } = {}): 
 		models: clinePassModels(apiBaseUrl),
 		api: apiImpl,
 	});
-}
-
-/**
- * Register the ClinePass provider on `models` when a usable Cline credential is
- * present in the providers.json file. Returns true when registered.
- */
-export function registerClinePass(
-	models: MutableModels,
-	options: { providersPath: string; apiBaseUrl?: string },
-): boolean {
-	const credential = readClineCredential(options.providersPath);
-	if (!credential) return false;
-	models.setProvider(createClinePassProvider({ apiBaseUrl: options.apiBaseUrl }));
-	return true;
 }
 
 /** The wire-model override for a model, if it has one (else undefined). */

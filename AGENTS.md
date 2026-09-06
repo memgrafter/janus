@@ -76,7 +76,7 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 
 - `POST /v1/chat/completions` — streaming (SSE) + non-streaming.
 - `POST /v1/responses` — OpenAI Responses API, streaming + non-streaming.
-- `GET /v1/models` — pi-ai models as `provider/id`.
+- `GET /v1/models` — ALL registered pi-ai models as `provider/id` (advertised regardless of whether a credential is present — a missing/rotating credential hides nothing; auth failures surface per-request, and a credential added later activates the provider with no restart).
 - `GET /v1/categories` — intelligence categories + live availability.
 - `POST /v1/events` — enqueue async work for a project -> `202 { id }`.
 - `GET /v1/work/:id` — poll a work item's status/result.
@@ -91,6 +91,16 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 - **Inert by default**: with no `PI_JANUS_CONFIG` there are no buckets/categories/projects, so everything is admitted and the queue stays empty — the core behaves exactly as before.
 
 Model id / category resolution: a request's `model` may be a **category id** or a raw `provider/id` / bare `id`. `CategoryRegistry.resolve` handles both; `/v1/models` lists raw pi-ai ids as `provider/id`.
+
+### Credential hot reload
+
+Provider credentials are **reread per request** (the `FileCredentialStore` over `PI_JANUS_AUTH_JSON` and the Cline `ClineCredentialStore` both read the file on every request, no in-memory cache), so a credential added to or changed on the PVC takes effect **without a restart**. Resolution order:
+
+- **Built-in providers** (openai, deepseek, …): pi-ai's own resolver — a stored credential in `auth.json` (`{ "openai": { "type": "api_key", "key": "..." } }`) wins, then the provider's env var. No janus code needed.
+- **Custom providers** (`PI_JANUS_MODELS_JSON`): stored credential in `auth.json` → catalog `apiKey` (`"$ENV_VAR"` → env, else literal). See `storedOrCatalogApiKey` in `custom-providers.ts`.
+- **ClinePass**: the Cline CLI's `providers.json` (OAuth, auto-refreshed). Registered unconditionally when `JANUS_CLINE_PASS=1` — NOT gated on a credential being present at startup, so a credential added later activates it. Until one exists the models are advertised and requests fail with `provider not configured`.
+
+The k8s Secret is **bootstrap-only** (seeded into the PVC if absent); the PVC is the runtime authority. Durability = back up the PVC. Inbound bearer-token rotation (`JANUS_TOKEN`) is a separate concern — see ticket jan-v39j.
 
 ## Config (env)
 

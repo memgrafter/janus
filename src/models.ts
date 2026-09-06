@@ -7,7 +7,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, type Api, type Model,
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ClineCredentialStore } from "./cline-credentials.ts";
-import { CLINE_PASS_PROVIDER_ID, registerClinePass } from "./cline-pass.ts";
+import { CLINE_PASS_PROVIDER_ID, createClinePassProvider } from "./cline-pass.ts";
 import { registerModelsJson } from "./custom-providers.ts";
 import { FileCredentialStore, RoutingCredentialStore } from "./credentials.ts";
 import type { Config } from "./config.ts";
@@ -43,16 +43,13 @@ export async function createClient(config: Config): Promise<Client> {
 		if (registered.length > 0) console.log(`pi-janus: registered custom providers: ${registered.join(", ")}`);
 	}
 	if (config.clinePass) {
-		// Register the ClinePass provider only when a usable Cline credential is
-		// present in providers.json.
-		const clineModels = createModels({ credentials: clineStore });
-		if (registerClinePass(clineModels, { providersPath: config.clineProvidersPath, apiBaseUrl: config.clineApiBaseUrl })) {
-			const cp = clineModels.getProvider(CLINE_PASS_PROVIDER_ID);
-			if (cp) {
-				models.setProvider(cp);
-				console.log("pi-janus: registered ClinePass provider (Cline OAuth)");
-			}
-		}
+		// Always register the ClinePass provider when enabled — NOT gated on a
+		// credential being present at startup. The routing credential store is
+		// reread per request, so a Cline credential added to providers.json later
+		// activates the provider with no restart; until one exists the models are
+		// advertised and requests fail with "provider not configured".
+		models.setProvider(createClinePassProvider({ apiBaseUrl: config.clineApiBaseUrl }));
+		console.log("pi-janus: registered ClinePass provider (Cline OAuth)");
 	}
 	return { models, resolveModel: (id) => resolveModel(models, id) };
 }
