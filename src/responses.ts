@@ -162,8 +162,8 @@ export class ResponsesChunker {
 
   constructor(private readonly model: string) {}
 
-  private resp(status: string, output: unknown[], usage?: Record<string, unknown>): Record<string, unknown> {
-    return { id: this.id, object: "response", status, model: this.model, output, ...(usage ? { usage } : {}) };
+  private resp(status: string, output: unknown[], usage?: Record<string, unknown>, error?: string): Record<string, unknown> {
+    return { id: this.id, object: "response", status, model: this.model, output, ...(usage ? { usage } : {}), ...(error ? { error: { message: error, type: "provider_error" } } : {}) };
   }
 
   private messageItem(status: string): Record<string, unknown> {
@@ -255,7 +255,10 @@ export class ResponsesChunker {
     return [];
   }
 
-  done(usage: InternalUsage): Record<string, unknown>[] {
+  done(usage: InternalUsage, errorMessage?: string): Record<string, unknown>[] {
+    if (errorMessage) {
+      return [{ type: "response.failed", response: this.resp("failed", [], undefined, errorMessage) }];
+    }
     const out: Record<string, unknown>[] = [];
     const output: Record<string, unknown>[] = [];
     let outputIndex = 0;

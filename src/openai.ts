@@ -241,13 +241,21 @@ export function completionToOpenAI(resp: InternalResponse): Record<string, unkno
 			function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
 		}));
 	}
+	const isError = resp.stopReason === "error" && resp.errorMessage;
 	return {
 		id: `chatcmpl-${randomId()}`,
 		object: "chat.completion",
 		created: Math.floor(Date.now() / 1000),
 		model: resp.model,
-		choices: [{ index: 0, message, finish_reason: finishReason(resp.stopReason) }],
+		choices: [
+			{
+				index: 0,
+				message,
+				finish_reason: isError ? describeError(resp.errorMessage) ?? "error" : finishReason(resp.stopReason),
+			},
+		],
 		usage: usageToOpenAI(resp.usage),
+		...(isError ? { error: providerError(resp.errorMessage!) } : {}),
 	};
 }
 
@@ -274,6 +282,25 @@ export function finishReason(r: StopReason): string {
 		case "aborted":
 			return "aborted";
 	}
+}
+
+/**
+ * A concise, single-line, length-capped rendering of a provider error for the
+ * `finish_reason` field. pi-ai's client maps an unknown finish_reason to
+ * `Provider finish_reason: <value>`, so embedding the real detail here is what
+ * makes it visible to OpenAI-compatible clients (which otherwise only get the
+ * normalized "error").
+ */
+function describeError(msg: string | undefined, max = 300): string | undefined {
+	if (!msg) return undefined;
+	const oneLine = msg.replace(/\s+/g, " ").trim();
+	if (oneLine.length <= max) return oneLine;
+	return oneLine.slice(0, max - 1) + "\u2026";
+}
+
+/** OpenAI-style error object for a failed provider call. */
+function providerError(message: string): Record<string, unknown> {
+	return { message, type: "provider_error", code: null };
 }
 
 function randomId(): string {
@@ -332,7 +359,13 @@ export class StreamChunker {
 		return this.choice({ tool_calls: [{ index: idx, function: { arguments: delta } }] });
 	}
 
-	done(reason: StopReason, usage: InternalUsage): Record<string, unknown> {
-		return { ...this.base(), choices: [{ index: 0, delta: {}, finish_reason: finishReason(reason) }], usage: usageToOpenAI(usage) };
+	done(reason: StopReason, usage: InternalUsage, errorMessage?: string): Record<string, unknown> {
+		const isError = reason === "error" && !!errorMessage;
+		return {
+			...this.base(),
+			choices: [{ index: 0, delta: {}, finish_reason: isError ? describeError(errorMessage) ?? "error" : finishReason(reason) }],
+			usage: usageToOpenAI(usage),
+			...(isError ? { error: providerError(errorMessage) } : {}),
+		};
 	}
 }

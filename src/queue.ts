@@ -6,7 +6,7 @@
 
 import type { InternalRequest } from "./openai.ts";
 
-export type WorkStatus = "queued" | "allocated" | "completed" | "expired" | "shed";
+export type WorkStatus = "queued" | "allocated" | "completed" | "failed" | "expired" | "shed";
 
 export interface WorkItem {
   id: string;

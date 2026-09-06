@@ -189,9 +189,16 @@ export class Control {
       const resolved = this.categories.resolve(item.request.model, this.models);
       const msg = await this.dispatcher.complete(resolved.model, item.request, item.deadlineMs);
       this.ledger.record(item.quotaBucketId, msg.usage);
-      item.status = "completed";
-      item.result = assistantMessageToInternal(msg);
-      this.telemetry.emit("work.complete", { id: item.id, tokens: msg.usage.totalTokens });
+      const result = assistantMessageToInternal(msg);
+      if (msg.stopReason === "error") {
+        item.status = "failed";
+        item.error = result.errorMessage ?? "provider error";
+        this.telemetry.emit("work.error", { id: item.id, error: item.error });
+      } else {
+        item.status = "completed";
+        item.result = result;
+        this.telemetry.emit("work.complete", { id: item.id, tokens: msg.usage.totalTokens });
+      }
     } catch (e) {
       item.status = "shed";
       item.error = e instanceof Error ? e.message : String(e);
