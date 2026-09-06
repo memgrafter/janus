@@ -103,7 +103,21 @@ function providerFromJson(providerId: string, cfg: ModelsJsonProvider): Provider
 	if (!api) throw new Error(`provider "${providerId}": no "api" specified`);
 	const apiImpl = getApiProvider(api);
 	if (!apiImpl) throw new Error(`provider "${providerId}": no API implementation registered for "${api}"`);
-	const models = (cfg.models ?? []).map((m) => modelFromJson(providerId, m, cfg));
+	const models = (cfg.models ?? [])
+		.filter((m) => {
+			// A model id that starts with its own provider prefix (e.g. provider
+			// "janus-k3s" with id "janus-k3s/openai/gpt-6-astra") is self-nested:
+			// when this provider's baseUrl points back at janus, every request
+			// resolves to the same model and re-dispatches to janus forever.
+			// Real upstream ids (e.g. "openai/gpt-5.6-luna" under "openrouter")
+			// never carry their own provider's prefix, so reject this shape.
+			if (m.id.startsWith(`${providerId}/`)) {
+				console.warn(`pi-janus: skipping model "${m.id}" in provider "${providerId}": id starts with its own provider prefix (self-referential loop)`);
+				return false;
+			}
+			return true;
+		})
+		.map((m) => modelFromJson(providerId, m, cfg));
 	const rawKey = cfg.apiKey;
 	return createProvider({
 		id: providerId,

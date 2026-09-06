@@ -73,15 +73,36 @@ export function resolveModel(models: Models, modelId: string): Model<Api> {
 		const provider = modelId.slice(0, slash);
 		const id = modelId.slice(slash + 1);
 		const m = models.getModel(provider, id);
-		if (m) return m;
+		if (m) {
+			assertNotSelfReferential(m);
+			return m;
+		}
 	}
 	// plain id: search across providers
 	for (const m of models.getModels()) {
-		if (m.id === modelId) return m;
+		if (m.id === modelId) {
+			assertNotSelfReferential(m);
+			return m;
+		}
 	}
 	const available = models
 		.getModels()
 		.map((m) => `${m.provider}/${m.id}`)
 		.join(", ");
 	throw new Error(`Unknown model "${modelId}". Available: ${available}`);
+}
+
+/**
+ * Defense in depth against self-referential routing: a model whose id starts
+ * with its own provider prefix (e.g. provider "janus-k3s", id
+ * "janus-k3s/openai/gpt-6-astra") loops forever when that provider's baseUrl
+ * points back at janus — the nested request carries the same id and resolves
+ * to the same model again. Registration (custom-providers.ts) already skips
+ * such models; this catches any that reach the Models collection by another
+ * path. control.admit maps the thrown error to a 400 reject.
+ */
+function assertNotSelfReferential(m: Model<Api>): void {
+	if (m.id.startsWith(`${m.provider}/`)) {
+		throw new Error(`Self-referential model "${m.provider}/${m.id}": model id starts with its own provider prefix; refusing to route (would loop)`);
+	}
 }

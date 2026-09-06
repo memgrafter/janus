@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createModels } from "@earendil-works/pi-ai";
+import { createModels, createProvider, type Api } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +25,30 @@ describe("registerModelsJson", () => {
 		expect(m.id).toBe("test-model");
 		expect(m.baseUrl).toBe("http://localhost:9999/v1");
 		expect(m.api).toBe("openai-completions");
+	});
+
+	it("skips a self-nested model id (own provider prefix) to prevent routing loops", () => {
+		const path = tempModelsJson({
+			providers: {
+				"janus-k3s": {
+					baseUrl: "http://janus:8787/v1",
+					api: "openai-completions",
+					apiKey: "k",
+					models: [
+						{ id: "janus-k3s/openai/gpt-6-astra", contextWindow: 100, maxTokens: 10 },
+						{ id: "openai/gpt-6-astra", contextWindow: 100, maxTokens: 10 },
+					],
+				},
+			},
+		});
+		const models = createModels();
+		registerModelsJson(models, path);
+		// the self-nested id is dropped; the clean id still registers
+		expect(models.getModels().some((m) => m.provider === "janus-k3s" && m.id === "janus-k3s/openai/gpt-6-astra")).toBe(false);
+		expect(models.getModels().some((m) => m.provider === "janus-k3s" && m.id === "openai/gpt-6-astra")).toBe(true);
+		// a slash in the id is fine when it is NOT the own-provider prefix
+		const m = resolveModel(models, "janus-k3s/openai/gpt-6-astra");
+		expect(m.id).toBe("openai/gpt-6-astra");
 	});
 
 	it("skips providers with an unknown api (non-fatal)", () => {
@@ -79,6 +103,35 @@ describe("registerModelsJson", () => {
 			expect(withWireModel(null, { wireModel: "y" })).toBeUndefined();
 			expect(withWireModel([1, 2], { wireModel: "y" })).toBeUndefined();
 		});
+	});
+
+	it("resolveModel rejects a self-nested model (defense in depth against routing loops)", () => {
+		// Bypass registration: put a self-nested model straight on the Models
+		// collection, as a future code path might. resolveModel must refuse it.
+		const model = {
+			id: "janus-k3s/openai/gpt-6-astra",
+			name: "Self Nested",
+			api: "openai-completions" as Api,
+			provider: "janus-k3s",
+			baseUrl: "http://janus:8787/v1",
+			reasoning: false,
+			input: ["text" as const],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 100,
+			maxTokens: 10,
+		};
+		const provider = createProvider({
+			id: "janus-k3s",
+			baseUrl: "http://janus:8787/v1",
+			auth: { apiKey: { name: "k", resolve: async () => undefined } },
+			models: [model],
+			api: { stream: () => { throw new Error("unused"); }, streamSimple: () => { throw new Error("unused"); } },
+		});
+		const models = createModels();
+		models.setProvider(provider);
+		expect(() => resolveModel(models, "janus-k3s/janus-k3s/openai/gpt-6-astra")).toThrow(/Self-referential model/);
+		// the plain-id lookup path is guarded too
+		expect(() => resolveModel(models, "janus-k3s/openai/gpt-6-astra")).toThrow(/Self-referential model/);
 	});
 
 	it("marks a $ENV_VAR provider available only when the env var is set", async () => {

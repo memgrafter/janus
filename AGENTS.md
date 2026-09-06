@@ -120,7 +120,7 @@ Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the
 
 ## pi-ai API surface used
 
-Pinned to `@earendil-works/pi-ai@0.84.3` (exact). Verified against `~/clones/pi-mono/packages/ai` (main).
+Pinned to `@earendil-works/pi-ai@0.85.1` (exact). Verified against `~/clones/pi-mono/packages/ai` (main).
 
 - **Main entry** `@earendil-works/pi-ai`: `createModels`, `createProvider`, `fauxProvider`, `fauxAssistantMessage`; types `Model`, `Context`, `StreamOptions`, `AssistantMessage`, `AssistantMessageEvent`, `Usage`, `Tool`, `TSchema`, `Api`.
 - **Subpath** `@earendil-works/pi-ai/providers/all`: `builtinModels()` (registers all built-in providers; reads provider keys from env).
@@ -129,6 +129,7 @@ Pinned to `@earendil-works/pi-ai@0.84.3` (exact). Verified against `~/clones/pi-
 
 ## Gotchas (will bite you)
 
+- **Self-referential model ids are rejected.** A models.json model whose `id` starts with its own provider prefix (e.g. provider `janus-k3s` with id `janus-k3s/openai/gpt-6-astra`) would loop forever when that provider's `baseUrl` points back at janus — the nested request carries the same id and re-resolves to the same model. `custom-providers.ts` skips such models at registration (with a warning) and `resolveModel` in `models.ts` throws `Self-referential model ...` as defense in depth (sync path → 400 reject, event path → work item `shed`). A slash in an id is fine when it is NOT the own-provider prefix (`openrouter/openai/gpt-5.6-luna` is legal).
 - **`bun` must be on PATH.** It's the official Rust build at `~/.bun/bin/bun`, symlinked to `~/.local/bin/bun`. In a bare shell that lacks it: `export PATH="$HOME/.bun/bin:$PATH"`. `~/.bun` is `BUN_INSTALL` (binary + package cache) — **do not delete**.
 - **`Model` is generic** — always use `Model<Api>`. Bare `Model` is a type error.
 - **`builtinModels()` is a subpath import** (`.../providers/all`), not the main entry.
@@ -161,7 +162,7 @@ Work is tracked with the `tk` CLI (file-based, in-repo `.tickets/`). Key command
 
 ## Reference
 
-- pi-mono source: `~/clones/pi-mono` (on `main`, v0.84.3) and `~/clones/pi-mono-dev` (branch `dev`, tracks `upstream/dev`).
+- pi-mono source: `~/clones/pi-mono` (on `main`, v0.85.1) and `~/clones/pi-mono-dev` (branch `dev`, tracks `upstream/dev`).
 - pi-ai source (the dependency): `~/clones/pi-mono-dev/packages/ai`.
 - Key pi-ai files: `src/types.ts` (Model, Usage, DeferredHandle, StreamOptions, AssistantMessageEvent), `src/models.ts` (Models, createModels, createProvider, fetchDeferred), `src/providers/faux.ts` (faux provider + deferred impl).
 - pi-ai is **client-only** — no HTTP server, no `/v1/models`, no `/v1/chat/completions` anywhere in pi-mono. pi-janus builds the server.
