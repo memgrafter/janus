@@ -294,7 +294,11 @@ async function handleChat(req: Request, client: Client, control: Control, config
 		const msg = await client.models.complete(ctx.model, context, options);
 		if (msg.stopReason === "error") logProviderError(ctx.model, msg.errorMessage);
 		control.ledger.record(ctx.quotaBucketId, msg.usage);
-		return jsonResponse(completionToOpenAI(assistantMessageToInternal(msg)), 200);
+		const resp = assistantMessageToInternal(msg);
+		if (msg.stopReason === "error") {
+			return jsonResponse({ error: { message: resp.errorMessage ?? "provider error", type: "provider_error", code: null } }, 502);
+		}
+		return jsonResponse(completionToOpenAI(resp), 200);
 	}
 
 	const encoder = new TextEncoder();
@@ -319,7 +323,7 @@ async function handleChat(req: Request, client: Client, control: Control, config
 				}
 			} catch (e) {
 				const message = logProviderError(ctx.model, e);
-				push({ error: { message } });
+				push(chunker.done("error", { input: 0, output: 0, totalTokens: 0 }, message));
 			} finally {
 				keepAlive.stop();
 				try { controller.enqueue(encoder.encode(sseDone())); controller.close(); } catch { /* client gone */ }
@@ -351,7 +355,11 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 		const msg = await client.models.complete(ctx.model, context, options);
 		if (msg.stopReason === "error") logProviderError(ctx.model, msg.errorMessage);
 		control.ledger.record(ctx.quotaBucketId, msg.usage);
-		return jsonResponse(responseToOpenAI(assistantMessageToInternal(msg), ctx.model.id), 200);
+		const resp = assistantMessageToInternal(msg);
+		if (msg.stopReason === "error") {
+			return jsonResponse({ error: { message: resp.errorMessage ?? "provider error", type: "provider_error" } }, 502);
+		}
+		return jsonResponse(responseToOpenAI(resp, ctx.model.id), 200);
 	}
 
 	const encoder = new TextEncoder();
@@ -375,7 +383,7 @@ async function handleResponses(req: Request, client: Client, control: Control, c
 				}
 			} catch (e) {
 				const message = logProviderError(ctx.model, e);
-				push({ type: "response.failed", response: { status: "failed", error: { message } } });
+				push({ type: "response.failed", response: { object: "response", status: "failed", model: ctx.model.id, output: [], error: { message, type: "provider_error" } } });
 			} finally {
 				keepAlive.stop();
 				try { controller.close(); } catch { /* client gone */ }
@@ -400,7 +408,7 @@ function mapEventToChunk(chunker: StreamChunker, event: AssistantMessageEvent): 
 		case "done":
 			return chunker.done(mapReason(event.reason), toInternalUsage(event.message.usage));
 		case "error":
-			return chunker.done(event.reason === "aborted" ? "aborted" : "error", toInternalUsage(event.error.usage));
+			return chunker.done(event.reason === "aborted" ? "aborted" : "error", toInternalUsage(event.error.usage), event.error.errorMessage);
 		default:
 			return null;
 	}
@@ -421,7 +429,7 @@ function mapResponsesEvent(chunker: ResponsesChunker, event: AssistantMessageEve
 		case "done":
 			return chunker.done(toInternalUsage(event.message.usage));
 		case "error":
-			return chunker.done(toInternalUsage(event.error.usage));
+			return chunker.done(toInternalUsage(event.error.usage), event.error.errorMessage);
 		default:
 			return [];
 	}

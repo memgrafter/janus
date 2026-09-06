@@ -108,4 +108,20 @@ describe("Control event intake + allocation", () => {
 		expect(t.where("work.enqueue")).toHaveLength(1);
 		expect(t.where("work.complete")).toHaveLength(1);
 	});
+
+	it("marks a work item failed with the provider error detail when the dispatch errors", async () => {
+		const failingDispatcher: Dispatcher = {
+			async complete() {
+				return fauxAssistantMessage("", { stopReason: "error", errorMessage: "400: context length exceeded" });
+			},
+		};
+		const control = new Control(fauxModels(), plane, new InMemoryTelemetry(), failingDispatcher);
+		const item = control.enqueueEvent({ project: "demo", messages: [{ role: "user", content: "hi" }] });
+		control.tick();
+		await new Promise((r) => setTimeout(r, 15));
+		const w = control.work(item.id)!;
+		expect(w.status).toBe("failed");
+		expect(w.error).toContain("context length exceeded");
+		expect(w.result).toBeUndefined();
+	});
 });

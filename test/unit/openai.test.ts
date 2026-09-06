@@ -119,6 +119,32 @@ describe("completionToOpenAI", () => {
 		}) as any;
 		expect(out.choices[0].message.reasoning_content).toBeUndefined();
 	});
+
+	it("embeds the provider error detail in finish_reason and a top-level error field", () => {
+		const detail = "400: This model's maximum context length is 262144 tokens but you requested 262145.";
+		const out = completionToOpenAI({
+			content: "",
+			toolCalls: [],
+			stopReason: "error",
+			errorMessage: detail,
+			usage: { input: 1, output: 0, totalTokens: 1 },
+			model: "m",
+		}) as any;
+		expect(out.choices[0].finish_reason).toContain("262144");
+		expect(out.error).toEqual({ message: detail, type: "provider_error", code: null });
+	});
+
+	it("falls back to finish_reason=error when there is no error message", () => {
+		const out = completionToOpenAI({
+			content: "",
+			toolCalls: [],
+			stopReason: "error",
+			usage: { input: 1, output: 0, totalTokens: 1 },
+			model: "m",
+		}) as any;
+		expect(out.choices[0].finish_reason).toBe("error");
+		expect(out.error).toBeUndefined();
+	});
 });
 
 describe("modelListToOpenAI", () => {
@@ -144,6 +170,28 @@ describe("StreamChunker", () => {
 		const t = c.thinking("hmm ") as any;
 		expect(t.choices[0].delta.reasoning_content).toBe("hmm ");
 		expect(t.choices[0].delta.content).toBeUndefined();
+	});
+
+	it("done() embeds the provider error detail in finish_reason and a top-level error field", () => {
+		const c = new StreamChunker("m");
+		const detail = "400: context length exceeded (262144 limit)";
+		const done = c.done("error", { input: 1, output: 0, totalTokens: 1 }, detail) as any;
+		expect(done.choices[0].finish_reason).toContain("262144");
+		expect(done.error).toEqual({ message: detail, type: "provider_error", code: null });
+	});
+
+	it("done() leaves finish_reason=error and no error field when no message is given", () => {
+		const c = new StreamChunker("m");
+		const done = c.done("error", { input: 1, output: 0, totalTokens: 1 }) as any;
+		expect(done.choices[0].finish_reason).toBe("error");
+		expect(done.error).toBeUndefined();
+	});
+
+	it("done() ignores the error message for a non-error stop reason", () => {
+		const c = new StreamChunker("m");
+		const done = c.done("stop", { input: 1, output: 1, totalTokens: 2 }, "should be ignored") as any;
+		expect(done.choices[0].finish_reason).toBe("stop");
+		expect(done.error).toBeUndefined();
 	});
 
 	it("assigns sequential tool_call indices", () => {

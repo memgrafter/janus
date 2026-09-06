@@ -180,7 +180,7 @@ describe("integration (ClinePass via local mock gateway)", () => {
 		expect(captured.model).toBe("cline-pass/kimi-k3");
 	});
 
-	it("logs the underlying provider error instead of silently reducing it to finish_reason=error", async () => {
+	it("surfaces the underlying provider error detail to the client (streaming)", async () => {
 		const errorLog = spyOn(console, "error").mockImplementation(() => {});
 		try {
 			const res = await fetch(`${base}/chat/completions`, {
@@ -194,12 +194,31 @@ describe("integration (ClinePass via local mock gateway)", () => {
 			});
 			expect(res.status).toBe(200);
 			const text = await res.text();
-			expect(text).toContain('"finish_reason":"error"');
+			// The real provider error detail is now embedded in the final chunk's
+			// finish_reason (so pi-ai clients surface it) and in a top-level error field.
+			expect(text).toContain("mock provider rejected request");
+			expect(text).toContain("provider_error");
 			expect(errorLog).toHaveBeenCalledWith(expect.stringContaining("mock provider rejected request"));
 			expect(errorLog).toHaveBeenCalledWith(expect.stringContaining("cline-pass/glm-5.3"));
 		} finally {
 			errorLog.mockRestore();
 		}
+	});
+
+	it("returns 502 with the provider error detail for a non-streaming failure", async () => {
+		const res = await fetch(`${base}/chat/completions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				model: "cline-pass/glm-5.3",
+				messages: [{ role: "user", content: "force provider error" }],
+				stream: false,
+			}),
+		});
+		expect(res.status).toBe(502);
+		const body = (await res.json()) as any;
+		expect(body.error.type).toBe("provider_error");
+		expect(body.error.message).toContain("mock provider rejected request");
 	});
 
 	it("still rewrites the wire model to the full slug when reasoning_effort is present", async () => {
