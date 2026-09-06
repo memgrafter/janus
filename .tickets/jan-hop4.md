@@ -1,7 +1,7 @@
 ---
 id: jan-hop4
-status: in_progress
-open: true
+status: closed
+open: false
 deps: []
 links: [pj-gxgm, jan-v39j]
 created: 2026-09-05T20:56:47Z
