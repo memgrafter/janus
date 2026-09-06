@@ -356,8 +356,11 @@ verify_release() {
 		command -v pi >/dev/null 2>&1 || { echo "pi is required for the agent smoke test" >&2; return 1; }
 		echo "==> pi-agent smoke: $SMOKE_PROVIDER/$SMOKE_MODEL"
 		agent_output="$(pi --provider "$SMOKE_PROVIDER" --model "$SMOKE_MODEL" --print --no-session --no-tools --thinking off 'Reply with exactly: janus k3s release ok' 2> >(tee "$WORK_DIR/pi-smoke.stderr" >&2))" || return 1
-		[[ "$agent_output" == "janus k3s release ok" ]] || {
-			echo "unexpected pi-agent response: $agent_output" >&2
+		# pi --print can prepend/append blank lines; squeeze all whitespace runs to
+		# single spaces and trim the edges so the check is robust to that padding.
+		agent_trimmed="$(printf '%s' "$agent_output" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+		[[ "$agent_trimmed" == "janus k3s release ok" ]] || {
+			echo "unexpected pi-agent response: $agent_trimmed" >&2
 			return 1
 		}
 	fi

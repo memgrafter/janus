@@ -64,7 +64,11 @@ const QWEN_EFFORT: Record<string, string> = {
 	max: "xhigh",
 };
 
-export function toPiStreamOptions(req: InternalRequest, extraOnPayload?: (payload: unknown, model: Model<Api>) => unknown | undefined): StreamOptions {
+export function toPiStreamOptions(
+	req: InternalRequest,
+	model: Model<Api>,
+	extraOnPayload?: (payload: unknown, model: Model<Api>) => unknown | undefined,
+): StreamOptions {
 	const opts: StreamOptions = {};
 	if (req.temperature !== undefined) opts.temperature = req.temperature;
 	if (req.maxTokens !== undefined) opts.maxTokens = req.maxTokens;
@@ -74,8 +78,16 @@ export function toPiStreamOptions(req: InternalRequest, extraOnPayload?: (payloa
 		// ModelsApiStreamOptions cast. pi-ai gates thinking on it being truthy.
 		(opts as { reasoningEffort?: string }).reasoningEffort = req.reasoningEffort;
 	}
-	if (req.reasoningEffort !== undefined || req.thinkingTokenBudget !== undefined) {
-		opts.onPayload = (payload, model) => addQwenReasoningControls(payload, model, req.reasoningEffort, req.thinkingTokenBudget);
+	// Arm the qwen hook for qwen-chat-template models even when the client sent no
+	// reasoning signal: an instruct model (reasoning: false) must explicitly set
+	// enable_thinking to false, because pi-ai emits no thinking control for
+	// non-reasoning models and the upstream qwen template then defaults to thinking
+	// on. For a normal (reasoning) model with no signal the hook is a no-op, so
+	// pi-ai's own enable_thinking behavior is preserved.
+	const mcompat = (model as Model<"openai-completions">).compat;
+	const isQwen = mcompat?.thinkingFormat === "qwen-chat-template";
+	if (req.reasoningEffort !== undefined || req.thinkingTokenBudget !== undefined || isQwen) {
+		opts.onPayload = (payload, m) => addQwenReasoningControls(payload, m, req.reasoningEffort, req.thinkingTokenBudget);
 	}
 	if (extraOnPayload) {
 		const qwen = opts.onPayload;
@@ -109,17 +121,43 @@ function addQwenReasoningControls(
 ): unknown | undefined {
 	if (!payload || typeof payload !== "object") return;
 	const m = model as Model<"openai-completions">;
-	if (!m.reasoning || m.compat?.thinkingFormat !== "qwen-chat-template") return;
+	if (m.compat?.thinkingFormat !== "qwen-chat-template") return;
 	const out = { ...(payload as Record<string, unknown>) };
-	let changed = false;
-	if (effort && m.compat.supportsReasoningEffort) {
+
+	// Whether the template must be forced off. Two cases, both of which pi-ai gets
+	// wrong and that the upstream qwen template otherwise answers by thinking:
+	//  - the client explicitly disabled it (reasoning_effort "off"; vLLM's
+	//    chat_template_kwargs.enable_thinking false is normalized to undefined by
+	//    parseReasoningEffort, but for a non-reasoning model the model flag below
+	//    already forces it off);
+	//  - the model is non-reasoning (e.g. an instruct alias): pi-ai emits no
+	//    thinking control at all, so we must say "off" explicitly.
+	// pi-ai's own qwen path computes `enable_thinking: !!reasoningEffort`, so the
+	// literal string "off" is truthy and it turns thinking ON — we override that.
+	const wantsOff = effort === "off" || !m.reasoning;
+	let ctkChanged = false;
+	if (wantsOff) {
+		const ctk =
+			typeof out.chat_template_kwargs === "object" && out.chat_template_kwargs !== null
+				? (out.chat_template_kwargs as Record<string, unknown>)
+				: {};
+		if (ctk.enable_thinking !== false) {
+			out.chat_template_kwargs = { ...ctk, enable_thinking: false };
+			ctkChanged = true;
+		}
+	}
+
+	// Effort and budget only apply to reasoning models; a non-reasoning model
+	// cannot meaningfully think, so its effort/budget are ignored (no-op).
+	let changed = ctkChanged;
+	if (m.reasoning && effort && effort !== "off" && m.compat.supportsReasoningEffort) {
 		const mapped = m.thinkingLevelMap?.[effort as ModelThinkingLevel] ?? QWEN_EFFORT[effort];
 		if (mapped != null) {
 			out.reasoning_effort = mapped;
 			changed = true;
 		}
 	}
-	if (budget !== undefined) {
+	if (m.reasoning && budget !== undefined) {
 		const field = m.compat.thinkingTokenBudgetField ?? (m.compat.supportsThinkingTokenBudget ? "thinking_token_budget" : undefined);
 		if (field) {
 			out[field] = budget;

@@ -2,13 +2,13 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "bun:test";
 import { assistantMessageToInternal, toPiContext, toPiStreamOptions } from "../../src/bridge.ts";
 
-const model = { id: "gpt-4o", provider: "openai", api: "openai-responses" } as unknown as Model<Api>;
+const gptModel = { id: "gpt-4o", provider: "openai", api: "openai-responses" } as unknown as Model<Api>;
 
 describe("toPiContext", () => {
 	it("extracts system prompt and user messages", () => {
 		const ctx = toPiContext(
 			{ model: "m", messages: [{ role: "system", content: "sys" }, { role: "user", content: "hi" }], stream: false },
-			model,
+			gptModel,
 		);
 		expect(ctx.systemPrompt).toBe("sys");
 		expect(ctx.messages).toHaveLength(1);
@@ -18,7 +18,7 @@ describe("toPiContext", () => {
 	it("maps tools", () => {
 		const ctx = toPiContext(
 			{ model: "m", messages: [{ role: "user", content: "hi" }], tools: [{ name: "f", parameters: { type: "object" } }], stream: false },
-			model,
+			gptModel,
 		);
 		expect(ctx.tools).toHaveLength(1);
 		expect(ctx.tools![0].name).toBe("f");
@@ -35,7 +35,7 @@ describe("toPiContext", () => {
 				],
 				stream: false,
 			},
-			model,
+			gptModel,
 		);
 		const assistant = ctx.messages[1] as AssistantMessage;
 		expect(assistant.content).toEqual([{ type: "toolCall", id: "t1", name: "f", arguments: { a: 1 } }]);
@@ -46,38 +46,46 @@ describe("toPiContext", () => {
 
 describe("toPiStreamOptions", () => {
 	it("passes temperature and maxTokens", () => {
-		const opts = toPiStreamOptions({ model: "m", messages: [], temperature: 0.3, maxTokens: 55, stream: false });
+		const opts = toPiStreamOptions({ model: "m", messages: [], temperature: 0.3, maxTokens: 55, stream: false }, gptModel);
 		expect(opts.temperature).toBe(0.3);
 		expect(opts.maxTokens).toBe(55);
 	});
 
-	it("omits onPayload when the client sends no reasoning effort", () => {
-		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false });
+	it("omits onPayload for a non-qwen model with no reasoning signal", () => {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false }, gptModel);
 		expect(opts.onPayload).toBeUndefined();
 	});
 });
 
-describe("toPiStreamOptions qwen reasoning_effort", () => {
-	const qwenModel = (overrides: Record<string, unknown> = {}): Model<Api> =>
-		({
-			id: "qwen3.8-27b",
-			provider: "vert-qwen38-dual-fast",
-			api: "openai-completions",
-			reasoning: true,
-			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true },
-			...overrides,
-		}) as unknown as Model<Api>;
+// A qwen-chat-template model factory. `reasoning` can be false to model an
+// instruct alias that shares the thinking endpoint.
+function qwenModel(overrides: Record<string, unknown> = {}): Model<Api> {
+	return {
+		id: "qwen3.8-27b",
+		provider: "vert",
+		api: "openai-completions",
+		reasoning: true,
+		compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true },
+		...overrides,
+	} as unknown as Model<Api>;
+}
 
-	// Run the options' onPayload against a pi-ai-shaped qwen payload (as
-	// buildParams would produce it) and return the result.
-	function transformed(req: { reasoningEffort?: string }, model: Model<Api>): unknown {
-		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, ...req });
-		expect(opts.onPayload).toBeInstanceOf(Function);
-		const payload = { model: "m", messages: [], chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } };
-		return opts.onPayload!(payload, model);
-	}
+// Mimic pi-ai's buildParams output for a qwen model: it emits a
+// chat_template_kwargs with enable_thinking reflecting !!reasoningEffort.
+function qwenPayload(): Record<string, unknown> {
+	return { model: "m", messages: [], chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } };
+}
 
-	it("adds mapped reasoning_effort for qwen-chat-template models", () => {
+// Run the options' onPayload against a qwen-shaped payload and return the
+// result.
+function transformed(req: { reasoningEffort?: string; thinkingTokenBudget?: number }, model: Model<Api>): unknown {
+	const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, ...req }, model);
+	expect(opts.onPayload).toBeInstanceOf(Function);
+	return opts.onPayload!(qwenPayload(), model);
+}
+
+describe("toPiStreamOptions qwen effort (reasoning model)", () => {
+	it("adds mapped reasoning_effort for a reasoning model", () => {
 		for (const [effort, expected] of [
 			["minimal", "low"],
 			["low", "low"],
@@ -88,7 +96,7 @@ describe("toPiStreamOptions qwen reasoning_effort", () => {
 		] as const) {
 			const out = transformed({ reasoningEffort: effort }, qwenModel()) as Record<string, unknown>;
 			expect(out.reasoning_effort).toBe(expected);
-			// Existing payload fields are preserved.
+			// Existing payload fields are preserved (thinking stays on).
 			expect(out.chat_template_kwargs).toEqual({ enable_thinking: true, preserve_thinking: true });
 		}
 	});
@@ -98,11 +106,19 @@ describe("toPiStreamOptions qwen reasoning_effort", () => {
 		expect(out.reasoning_effort).toBe("custom");
 	});
 
-	it("leaves the payload unchanged when supportsReasoningEffort is false", () => {
+	it("forces enable_thinking off when the client sends reasoning_effort off", () => {
+		const out = transformed({ reasoningEffort: "off" }, qwenModel()) as Record<string, unknown>;
+		expect(out.chat_template_kwargs).toEqual({ enable_thinking: false, preserve_thinking: true });
+		expect(out.reasoning_effort).toBeUndefined();
+	});
+
+	it("leaves the payload unchanged when supportsReasoningEffort is false and effort is not off", () => {
 		const out = transformed(
 			{ reasoningEffort: "high" },
 			qwenModel({ compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: false } }),
 		);
+		// No effort/budget applies and the model is reasoning (not forced off),
+		// so the payload is untouched.
 		expect(out).toBeUndefined();
 	});
 
@@ -110,31 +126,26 @@ describe("toPiStreamOptions qwen reasoning_effort", () => {
 		const out = transformed({ reasoningEffort: "high" }, qwenModel({ compat: { thinkingFormat: "openai", supportsReasoningEffort: true } }));
 		expect(out).toBeUndefined();
 	});
+});
 
-	it("leaves the payload unchanged for non-reasoning models", () => {
-		const out = transformed({ reasoningEffort: "high" }, qwenModel({ reasoning: false }));
-		expect(out).toBeUndefined();
+describe("toPiStreamOptions qwen effort (instruct / non-reasoning model)", () => {
+	const instruct = () => qwenModel({ reasoning: false, compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true } });
+
+	it("forces enable_thinking off even when the client sent no reasoning signal", () => {
+		const out = transformed({}, instruct()) as Record<string, unknown>;
+		expect(out.chat_template_kwargs).toEqual({ enable_thinking: false, preserve_thinking: true });
+	});
+
+	it("forces enable_thinking off regardless of effort (ignores effort on a non-reasoning model)", () => {
+		for (const effort of ["off", "high"] as const) {
+			const out = transformed({ reasoningEffort: effort }, instruct()) as Record<string, unknown>;
+			expect(out.chat_template_kwargs).toEqual({ enable_thinking: false, preserve_thinking: true });
+			expect(out.reasoning_effort).toBeUndefined();
+		}
 	});
 });
 
 describe("toPiStreamOptions thinking token budget", () => {
-	const qwenModel = (overrides: Record<string, unknown> = {}): Model<Api> =>
-		({
-			id: "qwen3.8-27b",
-			provider: "vert-qwen38-dual-fast",
-			api: "openai-completions",
-			reasoning: true,
-			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true },
-			...overrides,
-		}) as unknown as Model<Api>;
-
-	function transformed(req: { thinkingTokenBudget?: number }, model: Model<Api>): unknown {
-		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, ...req });
-		expect(opts.onPayload).toBeInstanceOf(Function);
-		const payload = { model: "m", messages: [], chat_template_kwargs: { enable_thinking: true, preserve_thinking: true } };
-		return opts.onPayload!(payload, model);
-	}
-
 	it("does not add a budget field unless the upstream model advertises one", () => {
 		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel());
 		expect(out).toBeUndefined();
@@ -164,28 +175,33 @@ describe("toPiStreamOptions thinking token budget", () => {
 	});
 
 	it("combines a configured budget field with mapped reasoning_effort", () => {
-		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false, reasoningEffort: "high", thinkingTokenBudget: 2048 });
-		const model = qwenModel({
-			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, thinkingTokenBudgetField: "thinking_token_budget" },
-		});
-		const out = opts.onPayload!({ model: "m", messages: [] }, model) as Record<string, unknown>;
+		const opts = toPiStreamOptions(
+			{ model: "m", messages: [], stream: false, reasoningEffort: "high", thinkingTokenBudget: 2048 },
+			qwenModel({ compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, thinkingTokenBudgetField: "thinking_token_budget" } }),
+		);
+		const out = opts.onPayload!(qwenPayload(), qwenModel({ compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, thinkingTokenBudgetField: "thinking_token_budget" } })) as Record<string, unknown>;
 		expect(out.reasoning_effort).toBe("xhigh");
 		expect(out.thinking_token_budget).toBe(2048);
 		expect(out.thinking_budget_tokens).toBeUndefined();
 	});
 
-	it("omits onPayload when the client sends no budget and no effort", () => {
-		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false });
+	it("omits onPayload for a non-qwen model with no budget and no effort", () => {
+		const opts = toPiStreamOptions({ model: "m", messages: [], stream: false }, gptModel);
 		expect(opts.onPayload).toBeUndefined();
+	});
+
+	it("ignores the budget on a non-reasoning (instruct) model but still forces thinking off", () => {
+		const model = qwenModel({
+			reasoning: false,
+			compat: { thinkingFormat: "qwen-chat-template", supportsReasoningEffort: true, thinkingTokenBudgetField: "thinking_token_budget" },
+		});
+		const out = transformed({ thinkingTokenBudget: 1024 }, model) as Record<string, unknown>;
+		expect(out.thinking_token_budget).toBeUndefined();
+		expect(out.chat_template_kwargs).toEqual({ enable_thinking: false, preserve_thinking: true });
 	});
 
 	it("leaves the payload unchanged for other thinking formats", () => {
 		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel({ compat: { thinkingFormat: "openai", supportsReasoningEffort: true } }));
-		expect(out).toBeUndefined();
-	});
-
-	it("leaves the payload unchanged for non-reasoning models", () => {
-		const out = transformed({ thinkingTokenBudget: 1024 }, qwenModel({ reasoning: false }));
 		expect(out).toBeUndefined();
 	});
 });
