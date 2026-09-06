@@ -11,7 +11,6 @@ import {
 	clinePassWireModelId,
 	createClinePassProvider,
 	refreshClinePassCredential,
-	registerClinePass,
 	withClinePassWireModel,
 } from "../../src/cline-pass.ts";
 import { ClineCredentialStore } from "../../src/cline-credentials.ts";
@@ -206,24 +205,34 @@ describe("createClinePassProvider", () => {
 	});
 });
 
-describe("registerClinePass", () => {
-	it("registers when a credential is present", () => {
-		const path = tempProvidersJson(AUTH);
-		const models = createModels();
-		expect(registerClinePass(models, { providersPath: path })).toBe(true);
-		expect(models.getProvider(CLINE_PASS_PROVIDER_ID)).toBeDefined();
+describe("ClinePass registration (no startup gate)", () => {
+	it("createClinePassProvider registers regardless of whether a credential exists", () => {
+		// With a credential present
+		const withCred = tempProvidersJson(AUTH);
+		const models1 = createModels();
+		models1.setProvider(createClinePassProvider());
+		expect(models1.getProvider(CLINE_PASS_PROVIDER_ID)).toBeDefined();
+		// Without one (missing file) — the provider is still registered; it just
+		// fails per-request until a credential appears (hot activation).
+		const models2 = createModels();
+		models2.setProvider(createClinePassProvider());
+		expect(models2.getProvider(CLINE_PASS_PROVIDER_ID)).toBeDefined();
 	});
 
-	it("does not register when no credential is present", () => {
-		const path = tempProvidersJson(undefined);
-		const models = createModels();
-		expect(registerClinePass(models, { providersPath: path })).toBe(false);
-		expect(models.getProvider(CLINE_PASS_PROVIDER_ID)).toBeUndefined();
-	});
+	it("resolves the Cline credential from providers.json when present, undefined when absent", async () => {
+		const present = tempProvidersJson(AUTH);
+		const missing = join(tmpdir(), "nope-xyz-cline-gate.json");
+		const store = new ClineCredentialStore(present, true);
+		const models1 = createModels({ credentials: store });
+		models1.setProvider(createClinePassProvider());
+		const auth1 = await models1.getAuth(CLINE_PASS_PROVIDER_ID);
+		expect(auth1?.auth.apiKey).toBe(AUTH.accessToken);
+		expect(auth1?.source).toBe("OAuth");
 
-	it("does not register for a missing file", () => {
-		const models = createModels();
-		expect(registerClinePass(models, { providersPath: join(tmpdir(), "nope-xyz.json") })).toBe(false);
+		const store2 = new ClineCredentialStore(missing, true);
+		const models2 = createModels({ credentials: store2 });
+		models2.setProvider(createClinePassProvider());
+		expect(await models2.getAuth(CLINE_PASS_PROVIDER_ID)).toBeUndefined();
 	});
 });
 

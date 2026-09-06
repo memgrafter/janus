@@ -60,6 +60,20 @@ function resolveApiKey(raw: string | undefined): string | undefined {
 	return raw;
 }
 
+/**
+ * Auth resolution for a custom provider: a stored credential in the credential
+ * store (auth.json) wins, then the catalog apiKey ("$ENV_VAR" -> env value,
+ * otherwise a literal). The store is reread per request, so a key added to or
+ * changed in auth.json takes effect without a restart (hot reload); the env
+ * var and catalog literal remain backward-compatible fallbacks.
+ */
+function storedOrCatalogApiKey(credential: { key?: string } | undefined, rawKey: string | undefined): { key: string; source: string } | undefined {
+	if (credential?.key) return { key: credential.key, source: "auth.json" };
+	const key = resolveApiKey(rawKey);
+	if (key === undefined) return undefined;
+	return { key, source: "models.json" };
+}
+
 function modelFromJson(providerId: string, def: ModelsJsonModel, cfg: ModelsJsonProvider): Model<Api> {
 	const api = (def.api ?? cfg.api) as Api | undefined;
 	if (!api) throw new Error(`provider "${providerId}", model "${def.id}": no "api" specified`);
@@ -99,10 +113,10 @@ function providerFromJson(providerId: string, cfg: ModelsJsonProvider): Provider
 		auth: {
 			apiKey: {
 				name: "API key",
-				resolve: async () => {
-					const key = resolveApiKey(rawKey);
-					if (key === undefined) return undefined;
-					return { auth: { apiKey: key }, source: "models.json" };
+				resolve: async ({ credential }) => {
+					const resolved = storedOrCatalogApiKey(credential, rawKey);
+					if (resolved === undefined) return undefined;
+					return { auth: { apiKey: resolved.key }, source: resolved.source };
 				},
 			},
 		},

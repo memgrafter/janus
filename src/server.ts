@@ -202,17 +202,22 @@ function makeKeepAlive(
 }
 
 async function handleModels(client: Client): Promise<Response> {
-	const available = await client.models.getAvailable();
+	// Advertise ALL registered models, not just ones with resolvable auth
+	// (getAvailable): a missing/rotating credential should hide nothing — auth
+	// failures surface per-request, and a credential added later (hot reload)
+	// activates the provider without a restart or a models-list change.
 	const list = modelListToOpenAI(
-		available.map((m) => ({
-			id: `${m.provider}/${m.id}`,
-			provider: m.provider,
-			contextWindow: m.contextWindow,
-			maxTokens: m.maxTokens,
-			reasoning: m.reasoning,
-			input: m.input,
-			cost: m.cost,
-		})),
+		client.models
+			.getModels()
+			.map((m) => ({
+				id: `${m.provider}/${m.id}`,
+				provider: m.provider,
+				contextWindow: m.contextWindow,
+				maxTokens: m.maxTokens,
+				reasoning: m.reasoning,
+				input: m.input,
+				cost: m.cost,
+			})),
 	);
 	return jsonResponse(list, 200);
 }
