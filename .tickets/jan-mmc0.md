@@ -102,3 +102,7 @@ Code: cline-pass.ts model spec gained optional `wireModel`; clinePassWireModelId
 E2E (real credential, unlimited thinking): restarted the local 8787 janus with JANUS_CLINE_PASS=1 and NO JANUS_TOKEN (user runs token-less; pi's pi-janus provider uses apiKey "0" which works when janus has no token). Verified: 412 models, `cline-pass/z-ai/glm-5.3-flash` present, existing models intact, live chat returned PI-E2E-OK. Added the model to ~/.pi/agent/models.json under pi-janus (backup made).
 
 NOTE: the running janus was restarted by hand (no launchd/tmux service found). If it's normally started by something else, that starter needs JANUS_CLINE_PASS=1 added.
+
+**2026-09-05T20:57:32Z**
+
+2026-09-11 (hot-reload finding): ClinePass registration is startup-gated - if no usable credential exists when Janus starts, adding one later does not register the provider. Deferral: make registration credential-independent; covered by jan-hop4.

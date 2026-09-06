@@ -2,8 +2,8 @@
 id: jan-z81o
 status: open
 open: true
-deps: []
-links: []
+deps: [jan-hop4]
+links: [pj-gxgm]
 created: 2026-08-30T21:47:10Z
 type: feature
 priority: 2
@@ -26,3 +26,9 @@ Acceptance:
 - /health shows per-provider credential state for api-key, env-var, and oauth providers.
 - A ClinePass credential with a dead refresh token reports re-auth-required (test with a mock gateway returning invalid_grant).
 - No behavior change for request handling; health is read-only.
+
+## Notes
+
+**2026-09-05T20:57:32Z**
+
+2026-09-11: keep scope (credential health read-only, no proactive refresh). Depends on jan-hop4 so health can report source/kind uniformly across stored, env, and catalog-literal credentials (including custom providers), not just OAuth.
