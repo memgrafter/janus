@@ -3,7 +3,7 @@ id: jan-hop4
 status: closed
 open: false
 deps: []
-links: [pj-gxgm, jan-v39j]
+links: [pj-gxgm, jan-v39j, jan-ppsz]
 created: 2026-09-05T20:56:47Z
 type: feature
 priority: 1

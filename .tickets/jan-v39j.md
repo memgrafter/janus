@@ -3,7 +3,7 @@ id: jan-v39j
 status: open
 open: true
 deps: []
-links: [jan-hop4]
+links: [jan-hop4, jan-ppsz]
 created: 2026-09-05T20:57:32Z
 type: feature
 priority: 2
