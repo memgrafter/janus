@@ -90,7 +90,18 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 - **Project routing**: `X-Project` header (or `body.metadata.project`) -> project config `{ category, quotaBucketId, deadlineMs }`.
 - **Inert by default**: with no `PI_JANUS_CONFIG` there are no buckets/categories/projects, so everything is admitted and the queue stays empty — the core behaves exactly as before.
 
-Model id / category resolution: a request's `model` may be a **category id** or a raw `provider/id` / bare `id`. `CategoryRegistry.resolve` handles both; `/v1/models` lists raw pi-ai ids as `provider/id`.
+### Model id / category resolution (and model aliasing)
+
+A request's `model` is resolved by `CategoryRegistry.resolve` (`categories.ts`), which every sync/event request flows through (`control.admit` -> `categories.resolve(requested, models)`). It tries two forms, in order:
+
+1. **Category id** — if `requested` is a registered category, `pickModel(cfg.models)` returns the **first** `provider/id` ref in the category's `models` list that resolves (later refs are fallbacks). This is the **model-aliasing method**: a short/curated name maps to a concrete upstream model, independent of the model's own id.
+2. **Raw model ref** — otherwise `resolveModel` does an **exact** `provider/id` (or bare `id`) match. No aliasing here: an id that isn't registered verbatim is `Unknown model`.
+
+`/v1/models` lists raw pi-ai ids as `provider/id` (it does **not** list category aliases).
+
+**Aliasing a short name to a long model id** (e.g. a pi-CLI-facing `modal/qwen3.8-27b-instruct` -> the catalog's `modal/qwen3.8-27b-w4a4-dflash2-instruct`): define a category whose `id` is the short name and whose `models` is `[the long provider/id]`. The short id then resolves to the long model; if that model also sets `wireModel`, the outgoing payload is rewritten to the real upstream id (see below). Category ids are plain `Map` keys, so a `/` in the id is fine. Categories come from `PI_JANUS_CONFIG` (`{ categories: [{ id, models, quotaBucketId?, deadlineMs? }] }`) and are **inert by default** — with no `PI_JANUS_CONFIG` there are no categories, so only raw `provider/id` refs resolve.
+
+**`wireModel` (different layer, don't confuse):** a per-model catalog field (`custom-providers.ts`) that rewrites the **outgoing** payload's `model` to the upstream id *after* the model is already resolved (janus id `qwen-3.8-27b-free` -> wire `qwen-3.8-27b`). It cannot make an incoming short id resolve to a differently-id'd model — that's what a category alias is for. The two compose: category alias resolves the model, `wireModel` fixes the wire id.
 
 ### Credential hot reload
 

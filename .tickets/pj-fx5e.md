@@ -3,7 +3,7 @@ id: pj-fx5e
 status: closed
 open: false
 deps: []
-links: [jan-ppsz]
+links: [jan-ppsz, jan-p62w]
 created: 2026-08-23T17:28:03Z
 type: feature
 priority: 2
