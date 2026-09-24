@@ -60,3 +60,7 @@ catalog:
   enabled: false
   existingConfigMap: ""
   modelsJson: ""
+decisions:
+  enabled: false
+  existingConfigMap: ""
+  decisionsJson: ""

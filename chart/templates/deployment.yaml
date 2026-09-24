@@ -97,6 +97,10 @@ spec:
             - name: JANUS_MODELS_JSON
               value: /etc/janus-inference-control-plane/models.json
             {{- end }}
+            {{- if .Values.decisions.enabled }}
+            - name: JANUS_DECISIONS_JSON
+              value: /etc/janus-decisions/decisions.json
+            {{- end }}
             {{- if .Values.auth.existingSecret }}
             - name: JANUS_TOKEN
               valueFrom:
@@ -123,7 +127,7 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 15
-          {{- if or .Values.persistence.enabled .Values.catalog.enabled }}
+          {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.decisions.enabled }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: data
@@ -133,8 +137,13 @@ spec:
             - name: catalog
               mountPath: /etc/janus-inference-control-plane
             {{- end }}
+            {{- if .Values.decisions.enabled }}
+            - name: decisions
+              mountPath: /etc/janus-decisions
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.auth.existingAuthSecret .Values.cline.enabled }}
+      {{- if or .Values.persistence.enabled .Values.catalog.enabled .Values.decisions.enabled .Values.auth.existingAuthSecret .Values.cline.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -145,6 +154,11 @@ spec:
         - name: catalog
           configMap:
             name: {{ .Values.catalog.existingConfigMap | default (include "janus-inference-control-plane.fullname" .) }}
+        {{- end }}
+        {{- if .Values.decisions.enabled }}
+        - name: decisions
+          configMap:
+            name: {{ .Values.decisions.existingConfigMap | default (printf "%s-decisions" (include "janus-inference-control-plane.fullname" .)) }}
         {{- end }}
         {{- if .Values.auth.existingAuthSecret }}
         - name: auth-seed

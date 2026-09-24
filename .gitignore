@@ -5,3 +5,6 @@ vendor/*
 *.log
 .DS_Store
 .*.bun-build
+
+# local env (keys, paths) — never commit
+.env

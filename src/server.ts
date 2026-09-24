@@ -23,6 +23,7 @@ import {
 import { parseResponsesRequest, responseToOpenAI, ResponsesChunker } from "./responses.ts";
 import { corsHeaders, jsonResponse, sseData, sseDone, sseHeaders } from "./sse.ts";
 import { InMemoryTelemetry } from "./telemetry.ts";
+import { loadDecisions, routeDecision } from "./decisions.ts";
 
 export interface ServerHandle {
 	port: number;
@@ -40,6 +41,7 @@ export async function createServer(
 	const listenPort = opts.port ?? config.port;
 	const plane = opts.plane ?? loadPlaneConfig(config.planeConfigPath);
 	const telemetry = new InMemoryTelemetry();
+	const decisions = loadDecisions(config.decisionsJsonPath);
 	const control = new Control(client.models, plane, telemetry, makeDispatcher(client));
 
 	const server = Bun.serve({
@@ -82,6 +84,23 @@ export async function createServer(
 				if (path === "/v1/chat/completions" && req.method === "POST") return await handleChat(req, client, control, config);
 				if (path === "/v1/responses" && req.method === "POST") return await handleResponses(req, client, control, config);
 				if (path === "/v1/events" && req.method === "POST") return await handleEvent(req, control);
+				if (path === "/v1/systemone" && req.method === "POST") {
+					if (Object.keys(decisions.decisions).length === 0)
+						return jsonResponse({ error: { message: "no decision sources configured (JANUS_DECISIONS_JSON)", type: "invalid_request_error", code: null } }, 503);
+					const raw = await req.text();
+					let model = "default";
+					try {
+						const parsed = JSON.parse(raw) as Record<string, unknown>;
+						if (typeof parsed.model === "string") model = parsed.model;
+					} catch { /* non-JSON body: forward as-is, route to default */ }
+					const res = await routeDecision(raw, model, decisions, timeoutMsFromConfig(config), (r) =>
+						console.log(`pi-janus: decision ${r.model} -> ${r.status} in ${r.durationMs}ms`),
+					);
+					return new Response(res.body, {
+						status: res.status,
+						headers: { ...res.headers, ...corsHeaders() },
+					});
+				}
 				const workMatch = path.match(/^\/v1\/work\/([^/]+)$/);
 				if (workMatch && req.method === "GET") return handleWork(control, decodeURIComponent(workMatch[1]));
 				return jsonResponse({ error: { message: `not found: ${path}`, type: "invalid_request_error", code: null } }, 404);

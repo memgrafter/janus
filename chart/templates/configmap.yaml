@@ -9,3 +9,15 @@ data:
   models.json: |
     {{- .Values.catalog.modelsJson | nindent 4 }}
 {{- end }}
+
+{{- if and .Values.decisions.enabled (not .Values.decisions.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "janus-inference-control-plane.fullname" . }}-decisions
+  labels:
+    {{- include "janus-inference-control-plane.labels" . | nindent 4 }}
+data:
+  decisions.json: |
+    {{- .Values.decisions.decisionsJson | nindent 4 }}
+{{- end }}
