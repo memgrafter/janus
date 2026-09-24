@@ -1,0 +1,8 @@
+{
+  "decisions": {
+    "djev":      { "baseUrl": "http://127.0.0.1:8011" },
+    "gliner2":   { "baseUrl": "http://127.0.0.1:8098" },
+    "jev-prod":  { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-latest" },
+    "jev-preview": { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-preview" }
+  }
+}

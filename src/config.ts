@@ -23,6 +23,11 @@ export interface Config {
   /** Path to a pi models.json file with custom providers to register. */
   modelsJsonPath?: string;
   /**
+   * Path to a decisions.json file mapping decision model names to
+   * /v1/systemone upstreams (the djev API). Enables POST /v1/systemone routing.
+   */
+  decisionsJsonPath?: string;
+  /**
    * Path to pi's auth.json (OAuth credentials for subscription providers like
    * openai-codex). Read/written by the FileCredentialStore. Defaults to
    * ~/.pi/agent/auth.json. Set to a non-existent path to disable OAuth providers.
@@ -65,6 +70,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     fauxResponse: env["JANUS_FAUX_RESPONSE"] ?? "pi-janus faux ok",
     planeConfigPath: env["JANUS_CONFIG"] || undefined,
     modelsJsonPath: env["JANUS_MODELS_JSON"] || undefined,
+    decisionsJsonPath: env["JANUS_DECISIONS_JSON"] || undefined,
     authJsonPath: env["JANUS_AUTH_JSON"] || join(homedir(), ".pi", "agent", "auth.json"),
     authNoLock: env["JANUS_AUTH_NO_LOCK"] === "1" || env["JANUS_AUTH_NO_LOCK"] === "true",
     clinePass: env["JANUS_CLINE_PASS"] === "1" || env["JANUS_CLINE_PASS"] === "true",

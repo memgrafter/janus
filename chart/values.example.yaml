@@ -57,6 +57,26 @@ apiKeys:
   - name: OPENROUTER_API_KEY
     secret: janus-inference-control-plane-keys
     key: openrouter
+  - name: TYPESAFE_API_KEY   # hosted Jev (decisions jev-prod/jev-preview)
+    secret: janus-inference-control-plane-keys
+    key: typesafe
 
 catalog:
   enabled: false   # enable for custom providers (vllm, etc.)
+
+# Decision routing for the djev/Jev API (POST /v1/systemone).
+# Map decision names -> /v1/systemone upstreams. The proxy name is the routing
+# key (body.model); a per-source `model` rewrites it before forwarding (hosted
+# Jev expects jev-latest, not the proxy name). `$VAR` values resolve from env
+# (apiKeys entries below become container env).
+#   kubectl -n <ns> create secret generic janus-inference-control-plane-keys \
+#     --from-literal=typesafe=$TYPESAFE_API_KEY   (add to the keys secret)
+decisions:
+  enabled: false
+  # decisionsJson: |
+  #   {
+  #     "decisions": {
+  #       "djev":      { "baseUrl": "http://djev-3090:8011" },
+  #       "jev-prod":  { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-latest" }
+  #     }
+  #   }
