@@ -1,0 +1,76 @@
+# Canonical k3s values for the janus control plane (europa cluster).
+#
+# Use with:  chart/k3s-release.sh --values chart/values.k3s.yaml
+#
+# The script overrides image.repository + image.tag itself (tag auto-generated
+# per build), so the image block below is inert and only kept for completeness.
+#
+# decisionsJson is the SOURCE OF TRUTH for the /v1/systemone decision sources.
+# It mirrors what was applied to the cluster out-of-band (djev + gliner2 were
+# kubectl-ed in on top of the Helm-managed jev-prod/jev-preview), so a redeploy
+# from this file is non-destructive: it preserves djev/gliner2/jev AND adds kev.
+#
+# kev currently points at the 0.8b stopgap on the Mac (megamellow) — the only
+# size that fits in 24 GB RAM alongside djev (see jan-w8gh / ds-63zr). When a
+# GPU host serves a real-size kev (4b/9b, ticket ds-63zr), change ONLY the kev
+# baseUrl below and redeploy; the janus side needs no other change.
+#
+# NOTE: megamellow.local / megamellow's LAN IP must be reachable from the k3s
+# nodes (djev + gliner2 already rely on this same reachability).
+
+apiKeys:
+  - key: openai
+    name: OPENAI_API_KEY
+    secret: janus-inference-control-plane-keys
+  - key: deepseek
+    name: DEEPSEEK_API_KEY
+    secret: janus-inference-control-plane-keys
+  - key: openrouter
+    name: OPENROUTER_API_KEY
+    secret: janus-inference-control-plane-keys
+  - key: cerebras
+    name: JANUS_CEREBRAS_FREE_KEY
+    secret: janus-inference-control-plane-keys
+  - key: cerebras-paid
+    name: JANUS_CEREBRAS_PAID_KEY
+    secret: janus-inference-control-plane-keys
+  - key: typesafe
+    name: TYPESAFE_API_KEY
+    secret: janus-inference-control-plane-keys
+auth:
+  existingAuthSecret: janus-auth-json
+  existingSecret: janus-inference-control-plane-token
+  noLock: true
+  tokenKey: token
+catalog:
+  enabled: true
+  existingConfigMap: janus-inference-control-plane-catalog
+cline:
+  enabled: true
+  existingSecret: janus-cline-providers
+decisions:
+  enabled: true
+  decisionsJson: |
+    {
+      "decisions": {
+        "djev":        { "baseUrl": "http://megamellow.local:8011" },
+        "gliner2":     { "baseUrl": "http://megamellow.local:8098" },
+        "jev-prod":    { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-latest" },
+        "jev-preview": { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-preview" },
+        "kev":         { "baseUrl": "http://megamellow.local:8009", "model": "kev-latest" }
+      }
+    }
+image:
+  pullPolicy: Always
+  repository: 192.168.1.208:5000/janus-inference-control-plane
+  tag: placeholder-auto-overridden-by-k3s-release
+persistence:
+  accessMode: ReadWriteOnce
+  enabled: true
+  mountPath: /data
+  size: 256Mi
+  storageClass: longhorn
+service:
+  loadBalancerIP: 192.168.1.206
+  port: 8787
+  type: LoadBalancer
