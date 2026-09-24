@@ -94,7 +94,7 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 
 ### Decision routing (Jev /v1/systemone)
 
-A separate transparent router for Jev's proprietary decision endpoint (`src/decisions.ts`). It is NOT part of the model/provider pipeline and NOT part of the control plane — the route is bearer auth + timeout only, plus one telemetry line (`pi-janus: decision <model> -> <status> in <ms>`), so janus is the measurement choke point for decision sources.
+A separate transparent router for Jev's proprietary decision endpoint (`src/decisions.ts`). It is NOT part of the model/provider pipeline and NOT part of the control plane — the route is bearer auth + timeout only, plus one telemetry line (`pi-janus: decision <model> -> <status> in <ms>`), so janus is the measurement choke point for decision sources. Any TypeSafe-compatible `/v1/systemone` server is a source: the hosted Jev API, the local djev/gliner2 routers (`~/code/djev-service`), and [kev](https://github.com/jaredpalmer/kev) (a drop-in Jev implementation; its `kev.serve` answers `model: "kev-latest"`), e.g. `{ "kev": { "baseUrl": "http://<lan-ip>:8009", "model": "kev-latest" } }`.
 
 Deviations from the official `api.typesafe.ai/v1/systemone` contract (remember these when clients misbehave):
 
