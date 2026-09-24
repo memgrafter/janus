@@ -65,6 +65,7 @@ src/
   queue.ts       PriorityQueue (binary max-heap) + WorkItem + runAllocator (expire/hold/drive)
   telemetry.ts   Telemetry port + InMemoryTelemetry (bounded ring; exposed via /v1/telemetry)
   responses.ts   OpenAI Responses API wire-format: parseResponsesRequest, responseToOpenAI, ResponsesChunker
+  decisions.ts   loadDecisions(JANUS_DECISIONS_JSON) + routeDecision: /v1/systemone name->upstream router, $VAR resolve, per-source model override, 404/502/503
   openai.ts      Chat Completions wire-format + shared Internal* types; parseChatRequest; StreamChunker; OpenAIError
   bridge.ts      toPiContext(req,model), toPiStreamOptions(req), assistantMessageToInternal(msg)
   sse.ts         sseHeaders, sseData, sseDone, jsonHeaders, jsonResponse
@@ -78,6 +79,7 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 - `POST /v1/responses` — OpenAI Responses API, streaming + non-streaming.
 - `GET /v1/models` — ALL registered pi-ai models as `provider/id` (advertised regardless of whether a credential is present — a missing/rotating credential hides nothing; auth failures surface per-request, and a credential added later activates the provider with no restart).
 - `GET /v1/categories` — intelligence categories + live availability.
+- `POST /v1/systemone` — Jev decision API (transparent router; see Decision routing below).
 - `POST /v1/events` — enqueue async work for a project -> `202 { id }`.
 - `GET /v1/work/:id` — poll a work item's status/result.
 - `GET /v1/telemetry` — the in-memory telemetry ring (quota/deadline/rate-limit observations).
@@ -89,6 +91,19 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 - **Event** (`/v1/events`): enqueues a `WorkItem` (priority band `event`). A timer (`PI_JANUS_ALLOC_MS`) runs `control.tick()` -> `runAllocator`, which expires stale items, holds quota-blocked ones, and drives the rest through the pi-ai client (non-stream `complete`), storing the result for `GET /v1/work/:id`.
 - **Project routing**: `X-Project` header (or `body.metadata.project`) -> project config `{ category, quotaBucketId, deadlineMs }`.
 - **Inert by default**: with no `PI_JANUS_CONFIG` there are no buckets/categories/projects, so everything is admitted and the queue stays empty — the core behaves exactly as before.
+
+### Decision routing (Jev /v1/systemone)
+
+A separate transparent router for Jev's proprietary decision endpoint (`src/decisions.ts`). It is NOT part of the model/provider pipeline and NOT part of the control plane — the route is bearer auth + timeout only, plus one telemetry line (`pi-janus: decision <model> -> <status> in <ms>`), so janus is the measurement choke point for decision sources.
+
+Deviations from the official `api.typesafe.ai/v1/systemone` contract (remember these when clients misbehave):
+
+- Config: `JANUS_DECISIONS_JSON` -> `{ "decisions": { <name>: { baseUrl, apiKey?, headers?, model? } } }`; `$VAR` env-resolve on `baseUrl`/`apiKey`. Missing file or no sources = route returns 503.
+- The request body is forwarded verbatim to `<baseUrl>/v1/systemone` EXCEPT the `model` field: it selects the routing name, and a source's `model` override rewrites it before forwarding (hosted Jev expects `jev-latest`, so the proxy name `jev-prod` maps to it).
+- Janus's own error envelope `{ error: { message, type, code } }` for: 404 unknown name (message lists available names), 502 upstream transport failure or timeout (shares `PI_JANUS_TIMEOUT_S`), 503 no sources configured. Upstream HTTP errors (400/422/…) pass through with original status + body.
+- Upstream response headers are dropped except `content-type`; janus adds its usual CORS `*`.
+- Non-JSON body does NOT 400 — it routes to a source named `default`.
+- The client sends only janus's bearer; upstream keys (e.g. `$TYPESAFE_API_KEY`) are held server-side and never exposed.
 
 ### Model id / category resolution (and model aliasing)
 
@@ -126,6 +141,7 @@ The k8s Secret is **bootstrap-only** (seeded into the PVC if absent); the PVC is
 | `PI_JANUS_CONFIG` | _(unset)_ | path to a JSON control-plane config (buckets/categories/projects); unset = inert plane |
 | `PI_JANUS_ALLOC_MS` | `1000` | allocator tick interval (ms) for queued event work |
 | `PI_JANUS_MODELS_JSON` | _(unset)_ | path to a pi `models.json` provider catalog (e.g. `~/.pi/agent/models.json`); registers those providers alongside the builtins |
+| `JANUS_DECISIONS_JSON` | _(unset)_ | path to `decisions.json` mapping decision names -> `/v1/systemone` upstreams (see Decision routing); unset = `/v1/systemone` returns 503 |
 
 Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are read from the environment by pi-ai's built-in providers — pi-janus does not manage them. When `PI_JANUS_MODELS_JSON` is set, `custom-providers.ts` also registers the providers in that catalog (each with its own `baseUrl`/`apiKey`/`api`); a provider's `apiKey` may be a literal (e.g. `"0"`) or an env ref (`"$OPENROUTER_API_KEY"`). Providers with no models, no `api`, or an unknown `api` are skipped with a warning (non-fatal). Request a catalog model as `provider/id` (e.g. `vert-qwen38-dual-fast/qwen3.8-27b`).
 
