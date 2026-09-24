@@ -12,11 +12,17 @@
  * decisions.json shape:
  * {
  *   "decisions": {
- *     "djev":     { "baseUrl": "http://127.0.0.1:8011", "apiKey": "$DG_KEY" },
+ *     "djev":     { "baseUrl": "http://127.0.0.1:8011" },
  *     "gliner2":  { "baseUrl": "http://127.0.0.1:8098" },
- *     "jev-prod": { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-latest" }
+ *     "jev-prod": { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-latest" },
+ *     "kev":      { "baseUrl": "http://127.0.0.1:8009", "model": "kev-latest" }
  *   }
  * }
+ *
+ * Sources are any TypeSafe-compatible /v1/systemone server: the hosted Jev
+ * API, the local djev/gliner2 routers, or kev (github.com/jaredpalmer/kev),
+ * which is a drop-in Jev implementation (its kev.serve exposes the same API
+ * behind `model: "kev-latest"`).
  *
  * `model` in the request body selects the decision. The forwarded body is
  * unchanged unless the source sets a `model` override (then the body's `model`
