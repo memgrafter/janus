@@ -5,6 +5,7 @@ A local, OpenAI-compatible inference proxy built on [`@earendil-works/pi-ai`](ht
 ## Endpoints
 
 - `POST /v1/chat/completions` — streaming (SSE) and non-streaming.
+- `POST /v1/systemone` — Jev decision API (see **Decisions** below).
 - `GET /v1/models` — lists available models (auth-configured providers).
 - `GET /health` — liveness.
 
@@ -27,6 +28,41 @@ Point any OpenAI-compatible client at it:
 export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
 ```
 
+## Decisions (Jev /v1/systemone)
+
+Janus can proxy Jev decision sources. Jev's `/v1/systemone` is a proprietary endpoint (not OpenAI Chat Completions), so janus routes it with a thin, transparent router instead of the model pipeline: a `decisions.json` file maps short **decision names** to `/v1/systemone` upstreams, and the request's `model` field selects one of them.
+
+Typical `decisions.json` (the repo root has a working one):
+
+```json
+{
+  "decisions": {
+    "djev":        { "baseUrl": "http://127.0.0.1:8011" },
+    "gliner2":     { "baseUrl": "http://127.0.0.1:8098" },
+    "jev-prod":    { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-latest" },
+    "jev-preview": { "baseUrl": "https://api.typesafe.ai", "apiKey": "$TYPESAFE_API_KEY", "model": "jev-preview" }
+  }
+}
+```
+
+Point a client at the proxy and pick a decision name:
+
+```bash
+curl -s http://127.0.0.1:8787/v1/systemone -H 'content-type: application/json' -d '{
+  "model": "jev-prod",
+  "state": "Everything is down and we have a demo at noon.",
+  "questions": { "urgent": { "type": "noul", "instructions": "Does this need an immediate response?" } }
+}'
+```
+
+Notes:
+
+- The body is forwarded verbatim; only `model` is special (routing key, rewritten per the source's `model` override when set).
+- Upstream API keys stay on the server (`"$ENV_VAR"` resolution) — the client only needs janus's bearer token.
+- Unknown name -> `404` listing the available names; upstream unreachable -> `502`; no `JANUS_DECISIONS_JSON` -> `503`.
+- Each call is logged as `pi-janus: decision <name> -> <status> in <ms>` (the proxy is the measurement choke point for decision sources).
+- On k3s: set the `decisions:` block in your Helm values (see `chart/values.example.yaml`); it renders a ConfigMap and sets `JANUS_DECISIONS_JSON` automatically.
+
 ## Configuration (env)
 
 | Var | Default | Meaning |
@@ -37,6 +73,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
 | `PI_JANUS_TIMEOUT_S` | `600` | per-request provider timeout in seconds (0 = disabled); clamped 0-99999 |
 | `PI_JANUS_FAUX` | _(unset)_ | `1` to use the scripted faux provider (tests/demos) |
 | `PI_JANUS_FAUX_RESPONSE` | `pi-janus faux ok` | faux provider response text |
+| `JANUS_DECISIONS_JSON` | _(unset)_ | path to `decisions.json` for `/v1/systemone` routing (see **Decisions**); unset = endpoint returns 503 |
 
 Provider API keys (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are read from the environment by pi-ai's built-in providers.
 
