@@ -38,7 +38,15 @@ Run the server: `./dist/pi-janus` (listens on `http://127.0.0.1:8787`), or `bun 
 - Refresh `vendor/pi-ai` with `scripts/vendor-pi-ai.sh` only when intentionally updating pi-ai. Do not bypass the overlay with a host-built binary.
 - Use `chart/k3s-release.sh` for k3s. It preserves the latest successful Helm values, prunes removed top-level values, validates Helm server-side, builds with the vendor overlay, verifies the binary and image are AMD64, pushes immutable + `latest`, deploys with rollback, and runs health + real-agent smoke tests.
 - On ARM hosts the k3s script cross-compiles the baseline linux-x64 binary natively and packages it through the Dockerfile's copy-only `runtime-prebuilt` target. This avoids running Bun under QEMU while retaining the vendor overlay.
-- The k3s script pins Helm to an immutable tag; dirty trees receive a content hash. Do not replace the script with an ad hoc `docker build` / `helm upgrade` sequence.
+- The k3s script pins Helm to an immutable tag; dirty trees (untracked files count) receive a content hash. Do not replace the script with an ad hoc `docker build` / `helm upgrade` sequence.
+- Decision sources: edit `chart/values.k3s.yaml` (source of truth) and release with `--values chart/values.k3s.yaml`. The default (last successful Helm values) can drop them.
+- Never `kubectl patch`/`edit` Helm-managed objects. Helm 4 uses server-side apply, so the next upgrade conflicts and its auto-rollback fails the same way. Recover: remove the `kubectl-patch` entry from the object's `managedFields`, then re-release.
+- Decisions load at startup only. A ConfigMap change needs a pod restart (no checksum annotation; releases restart via the new image tag).
+- Mac host: Docker via colima with `insecure-registries: [192.168.1.208:5000]` under `docker:` in `~/.colima/default/colima.yaml` (plain-HTTP registry; the key is hyphenated or dockerd won't start), and `docker-buildx` linked into `~/.docker/cli-plugins/`.
+- Images build with `--provenance=false --sbom=false`: an attestation manifest (`unknown/unknown`) fails the amd64 check.
+- Agent smoke test needs the `pi` CLI with a `janus-k3s` provider (the script exports `JANUS_TOKEN` from the k8s secret) and makes a real completion with `deepseek/deepseek-v4-flash`, which must be in `/v1/models`. `pi` is not in the upfront tool check: missing it fails after deploy and rolls back. `--skip-agent-smoke` skips it.
+- The image is distroless (no shell, no bun), so `kubectl exec` can't run checks. For in-cluster network tests use a throwaway pod: `kubectl -n <ns> run tmp --rm -i --restart=Never --image=curlimages/curl -- curl ...`.
+- Building against a local pi-mono branch: `scripts/sync-pi-ai.sh`, then `scripts/build.sh --skip-deps` (see `scripts/FORKED_PI_IF_NEEDED.md`).
 
 ## Architecture
 
