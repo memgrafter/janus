@@ -250,8 +250,12 @@ BUILDX_ARGS=()
 if [[ -n "$DOCKER_BUILDER" ]]; then
 	BUILDX_ARGS+=( --builder "$DOCKER_BUILDER" )
 fi
+# No provenance/SBOM attestations: Docker 29 (containerd store) otherwise pushes
+# an extra unknown/unknown attestation manifest, which fails the amd64 check below.
 docker buildx build "${BUILDX_ARGS[@]}" \
 	--platform linux/amd64 \
+	--provenance=false \
+	--sbom=false \
 	--target runtime-prebuilt \
 	--load \
 	-f "$JANUS_ROOT/Dockerfile" \
