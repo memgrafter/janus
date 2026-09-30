@@ -20,7 +20,7 @@
 FROM oven/bun:1 AS build
 WORKDIR /app
 
-# Install deps for linux. This pulls the registry pi-ai (0.84.2), which the
+# Install deps for linux. This pulls the registry-pinned pi-ai, which the
 # next step overlays with the vendored local build.
 COPY package.json bun.lock ./
 RUN bun install

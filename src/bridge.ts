@@ -3,7 +3,7 @@
  * Context / StreamOptions (request) and AssistantMessage (response).
  */
 
-import type { Api, AssistantMessage, Context, Model, ModelThinkingLevel, StreamOptions, TextContent, Tool, ToolCall, TSchema, Usage } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, JsonObject, Model, ModelThinkingLevel, StreamOptions, TextContent, Tool, ToolCall, TSchema, Usage } from "@earendil-works/pi-ai";
 import type { InternalRequest, InternalResponse, InternalToolCall, StopReason } from "./openai.ts";
 
 export function toPiContext(req: InternalRequest, model: Model<Api>): Context {
@@ -21,7 +21,7 @@ export function toPiContext(req: InternalRequest, model: Model<Api>): Context {
 		} else if (m.role === "assistant") {
 			const content: (TextContent | ToolCall)[] = [];
 			if (m.content) content.push({ type: "text", text: m.content });
-			for (const tc of m.toolCalls ?? []) content.push({ type: "toolCall", id: tc.id, name: tc.name, arguments: tc.arguments });
+			for (const tc of m.toolCalls ?? []) content.push({ type: "toolCall", id: tc.id, name: tc.name, arguments: tc.arguments as JsonObject });
 			messages.push({
 				role: "assistant",
 				content,
