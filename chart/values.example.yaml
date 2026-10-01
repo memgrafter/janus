@@ -1,7 +1,5 @@
-# Example values for a longhorn + metallb k3s cluster.
-#
-# Mirrors a real instantiation; cluster-specific values (registry, metallb IP)
-# are placeholders — replace them for your cluster.
+# Portable template only. Copy into your infrastructure repository before
+# customizing or deploying. Never commit real cluster values here.
 #
 # Prereqs (create once in the target namespace):
 #   kubectl -n <ns> create secret generic janus-inference-control-plane-token \

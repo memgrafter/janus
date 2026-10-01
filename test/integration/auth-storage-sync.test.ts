@@ -17,8 +17,8 @@ import type { Credential } from "@earendil-works/pi-ai";
  * (a) produce byte-identical on-disk output, and (b) read back what the other wrote.
  */
 
-const CODEX_AUTH_STORAGE =
-	"/path/to/pi-mono/packages/coding-agent/src/core/auth-storage.ts";
+// Opt in with the source path of a compatible pi coding-agent AuthStorage.
+const CODEX_AUTH_STORAGE = process.env.PI_AUTH_STORAGE_SOURCE ?? "";
 
 const hasWorktree = existsSync(CODEX_AUTH_STORAGE);
 

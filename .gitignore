@@ -8,3 +8,9 @@ vendor/*
 
 # local env (keys, paths) — never commit
 .env
+
+# Site-specific operational records belong outside the public repository.
+.tickets/
+chart/values.k3s.yaml
+chart/k3s-release.sh
+cline_chatcompletions_sample.txt

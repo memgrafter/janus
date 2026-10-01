@@ -63,8 +63,8 @@ ENV JANUS_HOST=0.0.0.0
 EXPOSE 8787
 USER nonroot
 
-# k3s-release.sh builds the linux-x64 binary on the host, including the vendor
-# overlay, then uses this target to package it without executing Bun under QEMU.
+# scripts/release.sh can build a verified linux-x64 binary on the host.
+# Infrastructure tooling can package it here without executing Bun under QEMU.
 # Its temporary build context contains exactly one file: pi-janus.
 FROM runtime-base AS runtime-prebuilt
 COPY --chmod=755 pi-janus /pi-janus

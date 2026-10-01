@@ -32,7 +32,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
 
 Janus can proxy Jev decision sources. Jev's `/v1/systemone` is a proprietary endpoint (not OpenAI Chat Completions), so janus routes it with a thin, transparent router instead of the model pipeline: a `decisions.json` file maps short **decision names** to `/v1/systemone` upstreams, and the request's `model` field selects one of them.
 
-Typical `decisions.json` (the repo root has a working one):
+Example `decisions.json` (adapt endpoints and store actual values outside this repository):
 
 ```json
 {
@@ -149,16 +149,20 @@ helm upgrade --install janus-inference-control-plane ./chart/ -f <your-values.ya
 
 ## Build / test / release
 
+**`chart/` is only a portable template, never an authoritative deployment.** Copy/adapt it in your infrastructure repository; keep cluster values, publication/deploy scripts, and runbooks there. Do not commit site details or credentials to Janus.
+
 There is **one way to build**: `scripts/build.sh` (a single `bun build --compile`).
 
 ```bash
 ./scripts/build.sh              # host platform -> dist/pi-janus
 ./scripts/build.sh --target linux-x64   # a specific platform -> dist/linux-x64/pi-janus
 ./scripts/test.sh               # build, typecheck, unit + integration + live tests
-./scripts/release.sh            # build all 6 platforms + SHA256SUMS
+./scripts/release.sh            # test + build all 6 platforms + SHA256SUMS
+./scripts/release.sh --out /tmp/janus-release linux-x64 # one platform
+./scripts/release.sh --vendor linux-x64 # explicit local pi-ai overlay
 ```
 
-`scripts/test.sh` builds first, then runs unit + integration tests against source and **live tests against the built binary** (a local process). `scripts/release.sh` builds every platform via `build.sh` and emits checksums. Shared shell helpers live in `scripts/lib.sh`.
+`scripts/test.sh` builds first, then runs unit + integration tests against source and **live tests against the built binary** (a local process). `scripts/release.sh` runs tests with deployment environment variables removed, stages a frozen-lockfile build, compiles selected platforms via `build.sh`, validates Linux x64 architecture, and emits checksums. Use `--skip-tests` only after testing this checkout. The default release ignores local vendor overrides; `--vendor` opts in explicitly. Shared shell helpers live in `scripts/lib.sh`.
 
 ## Layout
 

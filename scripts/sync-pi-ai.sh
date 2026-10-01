@@ -3,7 +3,7 @@
 # Run before ./scripts/build.sh --skip-deps so the build bundles your branch.
 # (Plain `bun install` would restore the registry version from bun.lock.)
 set -euo pipefail
-SRC="${PI_MONO_AI:-$HOME/clones/pi-mono/packages/ai}"
+SRC="${PI_MONO_AI:?set PI_MONO_AI to your built pi-ai package directory}"
 DST="$(cd "$(dirname "$0")/.." && pwd)/node_modules/@earendil-works/pi-ai"
 [ -f "$SRC/dist/api/openai-completions.js" ] || { echo "error: $SRC/dist missing — run: (cd $SRC && npm run build)" >&2; exit 1; }
 rsync -a --delete "$SRC/dist/" "$DST/dist/"
