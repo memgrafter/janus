@@ -151,6 +151,8 @@ helm upgrade --install janus-inference-control-plane ./chart/ -f <your-values.ya
 
 **`chart/` is only a portable template, never an authoritative deployment.** Copy/adapt it in your infrastructure repository; keep cluster values, publication/deploy scripts, and runbooks there. Do not commit site details or credentials to Janus.
 
+Requires **Bun 1.4.4 or newer**. `.bun-version` and the Docker build image pin Bun 1.4.4 for reproducible builds.
+
 There is **one way to build**: `scripts/build.sh` (a single `bun build --compile`).
 
 ```bash

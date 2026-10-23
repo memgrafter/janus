@@ -17,7 +17,7 @@
 # JANUS_MODELS_JSON, JANUS_TOKEN) — see chart/ for the k8s wiring.
 
 # ---- build: compile the static binary with the vendored (modified) pi-ai ----
-FROM oven/bun:1 AS build
+FROM oven/bun:1.4.4 AS build
 WORKDIR /app
 
 # Install deps for linux. This pulls the registry-pinned pi-ai, which the
