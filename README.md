@@ -151,7 +151,7 @@ helm upgrade --install janus-inference-control-plane ./chart/ -f <your-values.ya
 
 **`chart/` is only a portable template, never an authoritative deployment.** Copy/adapt it in your infrastructure repository; keep cluster values, publication/deploy scripts, and runbooks there. Do not commit site details or credentials to Janus.
 
-Requires **Bun 1.4.4 or newer**. `.bun-version` and the Docker build image pin Bun 1.4.4 for reproducible builds.
+Requires **Bun 1.4.4 or newer**. `.bun-version` pins Bun 1.4.4 for reproducible builds. The container image needs Go instead of Docker (see below).
 
 There is **one way to build**: `scripts/build.sh` (a single `bun build --compile`).
 
@@ -162,7 +162,10 @@ There is **one way to build**: `scripts/build.sh` (a single `bun build --compile
 ./scripts/release.sh            # test + build all 6 platforms + SHA256SUMS
 ./scripts/release.sh --out /tmp/janus-release linux-x64 # one platform
 ./scripts/release.sh --vendor linux-x64 # explicit local pi-ai overlay
+go -C tools/image run .         # dist/linux-x64/pi-janus -> dist/image/pi-janus-linux-amd64.tar
 ```
+
+**Container image (no Docker):** `tools/image` is a small Go program (go-containerregistry) that puts the linux-x64 binary on a pinned `gcr.io/distroless/base-debian13:nonroot` amd64 base and writes a reproducible OCI image tarball: entrypoint `/pi-janus`, user `nonroot`, `JANUS_HOST=0.0.0.0`, port 8787. It never pushes; publish the tarball from your infrastructure repository, e.g. `crane push dist/image/pi-janus-linux-amd64.tar <registry>/<repo>:<tag>`.
 
 `scripts/test.sh` builds first, then runs unit + integration tests against source and **live tests against the built binary** (a local process). `scripts/release.sh` runs tests with deployment environment variables removed, stages a frozen-lockfile build, compiles selected platforms via `build.sh`, validates Linux x64 architecture, and emits checksums. Use `--skip-tests` only after testing this checkout. The default release ignores local vendor overrides; `--vendor` opts in explicitly. Shared shell helpers live in `scripts/lib.sh`.
 
@@ -181,6 +184,7 @@ src/
   cline-credentials.ts Cline CLI providers.json credential store
   cline-pass.ts        ClinePass provider (gateway, refresh, model catalog)
 scripts/       build.sh (single build), test.sh, release.sh, lib.sh
+tools/image/   container image packager (Go, no Docker)
 test/          unit/ (pure), integration/ (in-process), live/ (built binary)
 ```
 

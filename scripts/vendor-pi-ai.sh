@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Vendor the local pi-mono branch build of pi-ai into vendor/pi-ai/ so the
-# Docker build can overlay it. The docker build context cannot reach
-# an external pi-mono checkout, so copy the built dist into the repo first.
+# Vendor the local pi-mono branch build of pi-ai into vendor/pi-ai/ so a
+# release can overlay it on the registry-pinned pi-ai.
 #
-# Run before `docker build`:
+# Then build with the overlay:
 #   ./scripts/vendor-pi-ai.sh
+#   ./scripts/release.sh --vendor linux-x64
 #
 # Requires the local pi-ai to be built:
 #   (cd $PI_MONO_AI && npm run build)

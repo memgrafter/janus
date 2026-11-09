@@ -18,6 +18,7 @@ bun install                 # needs bun on PATH (see Gotchas)
 ./scripts/build.sh --target linux-x64   # a specific platform -> dist/<plat>/pi-janus
 ./scripts/test.sh           # build -> typecheck -> unit+integration -> live (built binary)
 ./scripts/release.sh        # test + all 6 platforms + SHA256SUMS
+go -C tools/image run .     # dist/linux-x64/pi-janus -> dist/image/pi-janus-linux-amd64.tar (OCI image, no Docker)
 ```
 
 Individual steps (already wired into `test.sh`):
@@ -35,9 +36,8 @@ Run the server: `./dist/pi-janus` (listens on `http://127.0.0.1:8787`), or `bun 
 - **`chart/` is ONLY a portable template, never a deployment source of truth.** Actual cluster charts, values, k3s release scripts, and runbooks belong in a separate infrastructure repository. Never commit site addresses, hostnames, credentials, or operator-specific facts here.
 - `scripts/release.sh` owns general release logic: clean-environment tests, frozen-lockfile staging, cross-platform binaries, architecture validation, and checksums. Use `--skip-tests` only after testing this checkout; `--vendor` explicitly opts into a local pi-ai overlay.
 - `scripts/build.sh` is the only binary build entrypoint. Run `scripts/test.sh` before release.
-- Container releases use the repository `Dockerfile`. Its default target runs `bun install`, overlays `vendor/pi-ai`, then calls `scripts/build.sh --skip-deps`.
-- Refresh `vendor/pi-ai` with `scripts/vendor-pi-ai.sh` only when intentionally testing a local pi-ai build. Published releases use the exact registry pin by default; the Dockerfile supports an optional overlay.
-- `runtime-prebuilt` packages a verified Linux binary without running the compiler under emulation. Image publication, registry authentication, deployment, rollback, and live smoke tests belong to the consuming infrastructure repository.
+- Container images, no Docker: `scripts/release.sh linux-x64` builds the binary, then `go -C tools/image run .` packages `dist/linux-x64/pi-janus` on the pinned distroless debian13 base (amd64) as a reproducible OCI tarball in `dist/image/` (Go + go-containerregistry, its own module, so the repo root stays Bun-only). Image publication, registry authentication, deployment, rollback, and live smoke tests belong to the consuming infrastructure repository.
+- Refresh `vendor/pi-ai` with `scripts/vendor-pi-ai.sh` only when intentionally testing a local pi-ai build. Published releases use the exact registry pin by default; `scripts/release.sh --vendor` opts into the overlay.
 - Never `kubectl patch`/`edit` Helm-managed objects. Helm 4 uses server-side apply, so the next upgrade conflicts and its auto-rollback fails the same way. Recover: remove the `kubectl-patch` entry from the object's `managedFields`, then re-release.
 - Decisions load at startup only. A ConfigMap change needs a pod restart (no checksum annotation; releases restart via the new image tag).
 - The image is distroless (no shell, no bun), so `kubectl exec` can't run checks. For in-cluster network tests use a throwaway pod: `kubectl -n <ns> run tmp --rm -i --restart=Never --image=curlimages/curl -- curl ...`.
@@ -73,6 +73,7 @@ src/
   bridge.ts      toPiContext(req,model), toPiStreamOptions(req), assistantMessageToInternal(msg)
   sse.ts         sseHeaders, sseData, sseDone, jsonHeaders, jsonResponse
 scripts/         lib.sh (shared helpers); build.sh; test.sh; release.sh
+tools/image/     main.go: container image packager (Go module; go-containerregistry, no Docker)
 test/            unit/ (pure), integration/ (in-process server), live/ (built binary), fixtures/ (plane.json), util.ts
 ```
 
