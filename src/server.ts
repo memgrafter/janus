@@ -221,13 +221,12 @@ function makeKeepAlive(
 }
 
 async function handleModels(client: Client): Promise<Response> {
-	// Advertise ALL registered models, not just ones with resolvable auth
-	// (getAvailable): a missing/rotating credential should hide nothing — auth
-	// failures surface per-request, and a credential added later (hot reload)
-	// activates the provider without a restart or a models-list change.
+	// List only models whose provider has a usable credential right now.
+	// getAvailable rereads the credential store and env on every call, so a key
+	// added later (hot reload) makes its provider appear with no restart.
+	const available = await client.models.getAvailable();
 	const list = modelListToOpenAI(
-		client.models
-			.getModels()
+		available
 			.map((m) => ({
 				id: `${m.provider}/${m.id}`,
 				provider: m.provider,

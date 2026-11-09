@@ -80,7 +80,7 @@ test/            unit/ (pure), integration/ (in-process server), live/ (built bi
 
 - `POST /v1/chat/completions` — streaming (SSE) + non-streaming.
 - `POST /v1/responses` — OpenAI Responses API, streaming + non-streaming.
-- `GET /v1/models` — ALL registered pi-ai models as `provider/id` (advertised regardless of whether a credential is present — a missing/rotating credential hides nothing; auth failures surface per-request, and a credential added later activates the provider with no restart).
+- `GET /v1/models` — models whose provider has a usable credential right now (`getAvailable()`), as `provider/id`. Rechecked on every call (credential store + env), so a key added later lists its provider with no restart; a removed key hides it. Costs one credential read per registered provider per call (keep `JANUS_AUTH_NO_LOCK` on for single-process deployments).
 - `GET /v1/categories` — intelligence categories + live availability.
 - `POST /v1/systemone` — Jev decision API (transparent router; see Decision routing below).
 - `POST /v1/events` — enqueue async work for a project -> `202 { id }`.
@@ -127,7 +127,7 @@ Provider credentials are **reread per request** (the `FileCredentialStore` over 
 
 - **Built-in providers** (openai, deepseek, …): pi-ai's own resolver — a stored credential in `auth.json` (`{ "openai": { "type": "api_key", "key": "..." } }`) wins, then the provider's env var. No janus code needed.
 - **Custom providers** (`PI_JANUS_MODELS_JSON`): stored credential in `auth.json` → catalog `apiKey` (`"$ENV_VAR"` → env, else literal). See `storedOrCatalogApiKey` in `custom-providers.ts`.
-- **ClinePass**: the Cline CLI's `providers.json` (OAuth, auto-refreshed). Registered unconditionally when `JANUS_CLINE_PASS=1` — NOT gated on a credential being present at startup, so a credential added later activates it. Until one exists the models are advertised and requests fail with `provider not configured`.
+- **ClinePass**: the Cline CLI's `providers.json` (OAuth, auto-refreshed). Registered unconditionally when `JANUS_CLINE_PASS=1` — NOT gated on a credential being present at startup, so a credential added later activates it. Until one exists the models are hidden from `/v1/models` and requests fail with `provider not configured`.
 
 The k8s Secret is **bootstrap-only** (seeded into the PVC if absent); the PVC is the runtime authority. Durability = back up the PVC. Inbound bearer-token rotation (`JANUS_TOKEN`) is a separate concern.
 

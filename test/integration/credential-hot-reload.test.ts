@@ -14,8 +14,9 @@ import { extractContentDeltas } from "../util.ts";
  * restart. Covers both auth paths:
  *   - built-in providers (pi-ai's resolver: stored credential -> env)
  *   - custom providers (janus resolution: stored -> catalog $ENV/literal)
- *   - ClinePass: advertised + activates without a restart once a credential
- *     appears in providers.json
+ *   - ClinePass: hidden from /v1/models until a credential appears in
+ *     providers.json, then listed + usable without a restart
+ * /v1/models lists only providers with a usable credential, rechecked per call.
  */
 
 const ENV_KEY = "hot-reload-env-key";
@@ -112,6 +113,13 @@ afterAll(async () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
+async function listedIds(): Promise<string[]> {
+	const res = await fetch(`${base}/models`);
+	expect(res.status).toBe(200);
+	const body = (await res.json()) as { data: { id: string }[] };
+	return body.data.map((m) => m.id);
+}
+
 async function chat(model: string): Promise<Response> {
 	return fetch(`${base}/chat/completions`, {
 		method: "POST",
@@ -121,6 +129,12 @@ async function chat(model: string): Promise<Response> {
 }
 
 describe("credential hot reload", () => {
+	it("/v1/models lists a credentialed provider and hides an uncredentialed one", async () => {
+		const ids = await listedIds();
+		expect(ids).toContain("hotprov/m1"); // key from $JANUS_HOTRELOAD_KEY
+		expect(ids).not.toContain("storedprov/m1"); // no catalog key, auth.json empty
+	});
+
 	it("custom provider: env fallback when auth.json is empty", async () => {
 		const res = await chat("hotprov/m1");
 		expect(res.status).toBe(200);
@@ -137,6 +151,11 @@ describe("credential hot reload", () => {
 		expect(extractContentDeltas(text)).toBe("hot reload ok");
 		expect(seenAuth[seenAuth.length - 1]).toBe(`Bearer ${STORED_KEY_1}`);
 	});
+
+	it("/v1/models lists a provider once its key is added to auth.json, without a restart", async () => {
+		expect(await listedIds()).toContain("storedprov/m1");
+	});
+
 	it("custom provider: a key added to auth.json wins without a restart", async () => {
 		writeFileSync(authJsonPath, JSON.stringify({ hotprov: { type: "api_key", key: STORED_KEY_1 } }, null, 2));
 		const res = await chat("hotprov/m1");
@@ -181,13 +200,12 @@ describe("credential hot reload", () => {
 		}
 	});
 
-	it("cline-pass: advertised with NO credential present", async () => {
-		expect(existsSync(providersPath)).toBe(false);
-		const res = await fetch(`${base}/models`);
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as any;
-		const ids = body.data.map((m: any) => m.id);
-		expect(ids).toContain("cline-pass/glm-5.3");
+	it("cline-pass: not listed with NO credential present", async () => {
+		// Reading the Cline store may create an empty "{}" providers.json; what
+		// matters is that it holds no Cline credential yet.
+		const raw = existsSync(providersPath) ? readFileSync(providersPath, "utf-8") : "{}";
+		expect(JSON.parse(raw).providers).toBeUndefined();
+		expect(await listedIds()).not.toContain("cline-pass/glm-5.3");
 	});
 
 	it("cline-pass: request fails cleanly before a credential exists", async () => {
@@ -236,5 +254,6 @@ describe("credential hot reload", () => {
 		const text = await res.text();
 		expect(extractContentDeltas(text)).toBe("clinepass mock ok");
 		expect(seenAuth[seenAuth.length - 1]).toBe("cline:Bearer workos:late-token");
+		expect(await listedIds()).toContain("cline-pass/glm-5.3");
 	});
 });
